@@ -90,7 +90,7 @@ namespace Cinemachine
                 if (mCachedFollowTargetVcam != null)
                     return mCachedFollowTargetVcam.State.FinalPosition;
                 if (target != null)
-                    return target.position;
+                    return TargetPositionCache.GetTargetPosition(target);
                 return Vector3.zero;
             }
         }
@@ -112,7 +112,7 @@ namespace Cinemachine
                 if (mCachedFollowTargetVcam != null)
                     return mCachedFollowTargetVcam.State.FinalOrientation;
                 if (target != null)
-                    return target.rotation;
+                    return TargetPositionCache.GetTargetRotation(target);
                 return Quaternion.identity;
             }
         }
@@ -162,7 +162,7 @@ namespace Cinemachine
                 if (mCachedLookAtTargetVcam != null)
                     return mCachedLookAtTargetVcam.State.FinalPosition;
                 if (target != null)
-                    return target.position;
+                    return TargetPositionCache.GetTargetPosition(target);
                 return Vector3.zero;
             }
         }
@@ -179,7 +179,7 @@ namespace Cinemachine
                 if (mCachedLookAtTargetVcam != null)
                     return mCachedLookAtTargetVcam.State.FinalOrientation;
                 if (target != null)
-                    return target.rotation;
+                    return TargetPositionCache.GetTargetRotation(target);
                 return Quaternion.identity;
             }
         }
@@ -205,6 +205,10 @@ namespace Cinemachine
         /// <summary>What part of the pipeline this fits into</summary>
         public abstract CinemachineCore.Stage Stage { get; }
 
+        /// <summary>Special for Body Stage compoments that want to be applied after Aim 
+        /// stage because they use the aim as inout for the procedural placement</summary>
+        public virtual bool BodyAppliesAfterAim { get { return false; } }
+
         /// <summary>Mutates the camera state.  This state will later be applied to the camera.</summary>
         /// <param name="curState">Input state that must be mutated</param>
         /// <param name="deltaTime">Delta time for time-based effects (ignore if less than 0)</param>
@@ -227,5 +231,21 @@ namespace Cinemachine
         /// <param name="target">The object that was warped</param>
         /// <param name="positionDelta">The amount the target's position changed</param>
         public virtual void OnTargetObjectWarped(Transform target, Vector3 positionDelta) {}
+
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation.  
+        /// Procedural placement then takes over.
+        /// Base class implementation does nothing.</summary>
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public virtual void ForceCameraPosition(Vector3 pos, Quaternion rot) {}
+
+        /// <summary>
+        /// Report maximum damping time needed for this component.
+        /// Only used in editor for timeline scrubbing.
+        /// </summary>
+        /// <returns>Highest damping setting in this component</returns>
+        public virtual float GetMaxDampTime() { return 0; }
     }
 }

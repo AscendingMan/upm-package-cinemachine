@@ -13,7 +13,7 @@ namespace Cinemachine
         public static readonly int kStreamingVersion = 20170927;
 
         /// <summary>Human-readable Cinemachine Version</summary>
-        public static readonly string kVersionString = "2.4.0";
+        public static readonly string kVersionString = "2.6.0";
 
         /// <summary>
         /// Stages in the Cinemachine Component pipeline, used for
@@ -31,7 +31,7 @@ namespace Cinemachine
             /// Correction channel of the CameraState)</summary>
             Noise,
 
-            /// <summary>Not a pipeline stage.  This is invoked on all virtual camera
+            /// <summary>Post-correction stage.  This is invoked on all virtual camera
             /// types, after the pipeline is complete</summary>
             Finalize
         };
@@ -64,6 +64,12 @@ namespace Cinemachine
         public static AxisInputDelegate GetInputAxis = UnityEngine.Input.GetAxis;
 
         /// <summary>
+        /// If non-negative, cinemachine will update with this uniform delta time.
+        /// Usage is for timelines in manual update mode.
+        /// </summary>
+        public static float UniformDeltaTimeOverride = -1;
+
+        /// <summary>
         /// Delegate for overriding a blend that is about to be applied to a transition.
         /// A handler can either return the default blend, or a new blend specific to
         /// current conditions.
@@ -89,6 +95,9 @@ namespace Cinemachine
 
         /// <summary>This event will fire after a brain updates its Camera</summary>
         public static CinemachineBrain.BrainEvent CameraUpdatedEvent = new CinemachineBrain.BrainEvent();
+
+        /// <summary>This event will fire after a brain updates its Camera</summary>
+        public static CinemachineBrain.BrainEvent CameraCutEvent = new CinemachineBrain.BrainEvent();
 
         /// <summary>List of all active CinemachineBrains.</summary>
         private List<CinemachineBrain> mActiveBrains = new List<CinemachineBrain>();
@@ -158,12 +167,21 @@ namespace Cinemachine
             mActiveCameras.Remove(vcam);
         }
 
+        /// <summary>Called when a Cinemachine Virtual Camera is destroyed.</summary>
+        internal void CameraDestroyed(CinemachineVirtualCameraBase vcam)
+        {
+            if (mActiveCameras.Contains(vcam))
+                mActiveCameras.Remove(vcam);
+            if (mUpdateStatus != null && mUpdateStatus.ContainsKey(vcam))
+                mUpdateStatus.Remove(vcam);
+        }
+
         // Registry of all vcams that are present, active or not
         private List<List<CinemachineVirtualCameraBase>> mAllCameras
             = new List<List<CinemachineVirtualCameraBase>>();
 
-        /// <summary>Called when a vcam is awakened.</summary>
-        internal void CameraAwakened(CinemachineVirtualCameraBase vcam)
+        /// <summary>Called when a vcam is enabled.</summary>
+        internal void CameraEnabled(CinemachineVirtualCameraBase vcam)
         {
             int parentLevel = 0;
             for (ICinemachineCamera p = vcam.ParentCamera; p != null; p = p.ParentCamera)
@@ -173,11 +191,13 @@ namespace Cinemachine
             mAllCameras[parentLevel].Add(vcam);
         }
 
-        /// <summary>Called when a vcam is destroyed.</summary>
-        internal void CameraDestroyed(CinemachineVirtualCameraBase vcam)
+        /// <summary>Called when a vcam is disabled.</summary>
+        internal void CameraDisabled(CinemachineVirtualCameraBase vcam)
         {
             for (int i = 0; i < mAllCameras.Count; ++i)
                 mAllCameras[i].Remove(vcam);
+            if (mRoundRobinVcamLastFrame == vcam)
+                mRoundRobinVcamLastFrame = null;
         }
 
         CinemachineVirtualCameraBase mRoundRobinVcamLastFrame = null;
@@ -288,7 +308,8 @@ namespace Cinemachine
                 : FixedFrameCount - status.lastUpdateFixedFrame;
             if (deltaTime >= 0)
             {
-                if (frameDelta == 0 && status.lastUpdateMode == updateClock)
+                if (frameDelta == 0 && status.lastUpdateMode == updateClock
+                        && status.lastUpdateDeltaTime == deltaTime)
                     return; // already updated
                 if (frameDelta > 0)
                     deltaTime *= frameDelta; // try to catch up if multiple frames
@@ -299,6 +320,7 @@ namespace Cinemachine
             status.lastUpdateFrame = Time.frameCount;
             status.lastUpdateFixedFrame = FixedFrameCount;
             status.lastUpdateMode = updateClock;
+            status.lastUpdateDeltaTime = deltaTime;
         }
 
         class UpdateStatus
@@ -306,19 +328,21 @@ namespace Cinemachine
             public int lastUpdateFrame;
             public int lastUpdateFixedFrame;
             public UpdateTracker.UpdateClock lastUpdateMode;
+            public float lastUpdateDeltaTime;
             public UpdateStatus()
             {
                 lastUpdateFrame = -2;
                 lastUpdateFixedFrame = 0;
                 lastUpdateMode = UpdateTracker.UpdateClock.Late;
+                lastUpdateDeltaTime = -2;
             }
         }
-        static Dictionary<CinemachineVirtualCameraBase, UpdateStatus> mUpdateStatus;
+        Dictionary<CinemachineVirtualCameraBase, UpdateStatus> mUpdateStatus;
 
         [RuntimeInitializeOnLoadMethod]
         static void InitializeModule()
         {
-            mUpdateStatus = new Dictionary<CinemachineVirtualCameraBase, UpdateStatus>();
+            CinemachineCore.Instance.mUpdateStatus = new Dictionary<CinemachineVirtualCameraBase, UpdateStatus>();
         }
 
         /// <summary>Internal use only</summary>
@@ -402,7 +426,12 @@ namespace Cinemachine
                 {
                     CinemachineBrain b = GetActiveBrain(i);
                     if (b != null && b.IsLive(vcam))
-                        b.m_CameraCutEvent.Invoke(b);
+                    {
+                        if (b.m_CameraCutEvent != null)
+                            b.m_CameraCutEvent.Invoke(b);
+                        if (CameraCutEvent != null)
+                            CameraCutEvent.Invoke(b);
+                    }
                 }
             }
         }

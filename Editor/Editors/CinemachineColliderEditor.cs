@@ -13,9 +13,9 @@ namespace Cinemachine.Editor
     [CustomEditor(typeof(CinemachineCollider))]
     internal sealed class CinemachineColliderEditor : BaseEditor<CinemachineCollider>
     {
-        protected override List<string> GetExcludedPropertiesInInspector()
+        protected override void GetExcludedPropertiesInInspector(List<string> excluded)
         {
-            List<string> excluded = base.GetExcludedPropertiesInInspector();
+            base.GetExcludedPropertiesInInspector(excluded);
             if (!Target.m_AvoidObstacles)
             {
                 excluded.Add(FieldPath(x => x.m_DistanceLimit));
@@ -30,14 +30,14 @@ namespace Cinemachine.Editor
             {
                 excluded.Add(FieldPath(x => x.m_MaximumEffort));
             }
-            return excluded;
         }
 
         public override void OnInspectorGUI()
         {
             BeginInspector();
 
-            if (Target.m_AvoidObstacles && !Target.VirtualCamera.State.HasLookAt)
+            if (Target.m_AvoidObstacles && Target.VirtualCamera != null
+                    && !Target.VirtualCamera.State.HasLookAt)
                 EditorGUILayout.HelpBox(
                     "Avoid Obstacles requires a LookAt target.",
                     MessageType.Warning);

@@ -191,8 +191,14 @@ namespace Cinemachine
             float deltaTime, Vector3 up, ref AxisState axis,
             ref AxisState.Recentering recentering, bool isLive)
         {
+            if (m_BindingMode == BindingMode.SimpleFollowWithWorldUp)
+            {
+                axis.m_MinValue = -180;
+                axis.m_MaxValue = 180;
+            }
+
             // Only read joystick when game is playing
-            if (deltaTime < 0 || !isLive)
+            if (deltaTime < 0 || !VirtualCamera.PreviousStateIsValid || !isLive)
             {
                 axis.Reset();
                 recentering.CancelRecentering();
@@ -200,14 +206,16 @@ namespace Cinemachine
             else if (axis.Update(deltaTime))
                 recentering.CancelRecentering();
 
-            float targetHeading = GetTargetHeading(axis.Value, GetReferenceOrientation(up), deltaTime);
-            if (deltaTime >= 0 && m_BindingMode != BindingMode.SimpleFollowWithWorldUp)
-                recentering.DoRecentering(ref axis, deltaTime, targetHeading);
-
-            float finalHeading = axis.Value;
             if (m_BindingMode == BindingMode.SimpleFollowWithWorldUp)
+            {
+                float finalHeading = axis.Value;
                 axis.Value = 0;
-            return finalHeading;
+                return finalHeading;
+            }
+
+            float targetHeading = GetTargetHeading(axis.Value, GetReferenceOrientation(up));
+            recentering.DoRecentering(ref axis, deltaTime, targetHeading);
+            return axis.Value;
         }
 
         private void OnEnable()
@@ -215,14 +223,29 @@ namespace Cinemachine
             // GML todo: do we really need this?
             PreviousTarget = null;
             mLastTargetPosition = Vector3.zero;
+
+            UpdateInputAxisProvider();
+        }
+
+        /// <summary>
+        /// API for the inspector.  Internal use only
+        /// </summary>
+        public void UpdateInputAxisProvider()
+        {
+            m_XAxis.SetInputAxisProvider(0, null);
+            if (!m_HeadingIsSlave && VirtualCamera != null)
+            {
+                var provider = VirtualCamera.GetInputAxisProvider();
+                if (provider != null)
+                    m_XAxis.SetInputAxisProvider(0, provider);
+            }
         }
 
         private Vector3 mLastTargetPosition = Vector3.zero;
         private HeadingTracker mHeadingTracker;
         private Rigidbody mTargetRigidBody = null;
         private Transform PreviousTarget { get; set; }
-        private Quaternion mHeadingPrevFrame = Quaternion.identity;
-        private Vector3 mOffsetPrevFrame = Vector3.zero;
+        private Vector3 mLastCameraPosition;
 
         /// <summary>This is called to notify the us that a target got warped,
         /// so that we can update its internal state to make the camera
@@ -238,6 +261,18 @@ namespace Cinemachine
             }
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            base.ForceCameraPosition(pos, rot);
+            mLastCameraPosition = pos;
+            m_XAxis.Value = GetAxisClosestValue(pos, VirtualCamera.State.ReferenceUp);
+        }
+        
         /// <summary>Notification that this virtual camera is going live.
         /// Base class implementation does nothing.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
@@ -306,36 +341,43 @@ namespace Cinemachine
             }
             LastHeading = HeadingUpdater(this, deltaTime, curState.ReferenceUp);
             float heading = LastHeading;
-
             if (IsValid)
             {
-                mLastTargetPosition = FollowTargetPosition;
-
                 // Calculate the heading
                 if (m_BindingMode != BindingMode.SimpleFollowWithWorldUp)
                     heading += m_Heading.m_Bias;
                 Quaternion headingRot = Quaternion.AngleAxis(heading, Vector3.up);
 
+                Vector3 rawOffset = EffectiveOffset;
+                Vector3 offset = headingRot * rawOffset;
+
                 // Track the target, with damping
-                Vector3 offset = EffectiveOffset;
-                Vector3 pos;
-                Quaternion orient;
-                TrackTarget(deltaTime, curState.ReferenceUp, headingRot * offset, out pos, out orient);
+                TrackTarget(deltaTime, curState.ReferenceUp, offset, out Vector3 pos, out Quaternion orient);
 
                 // Place the camera
+                offset = orient * offset;
                 curState.ReferenceUp = orient * Vector3.up;
-                if (deltaTime >= 0)
-                {
-                    Vector3 bypass = (headingRot * offset) - mHeadingPrevFrame * mOffsetPrevFrame;
-                    bypass = orient * bypass;
-                    curState.PositionDampingBypass = bypass;
-                }
-                orient = orient * headingRot;
-                curState.RawPosition = pos + orient * offset;
 
-                mHeadingPrevFrame = (m_BindingMode == BindingMode.SimpleFollowWithWorldUp)
-                    ? Quaternion.identity : headingRot;
-                mOffsetPrevFrame = offset;
+                // Respect minimum target distance on XZ plane
+                var targetPosition = FollowTargetPosition;
+                pos += GetOffsetForMinimumTargetDistance(
+                    pos, offset, curState.RawOrientation * Vector3.forward,
+                    curState.ReferenceUp, targetPosition);
+                curState.RawPosition = pos + offset;
+
+                if (deltaTime >= 0 && VirtualCamera.PreviousStateIsValid)
+                {
+                    var lookAt = targetPosition;
+                    if (LookAtTarget != null)
+                        lookAt = LookAtTargetPosition;
+                    var dir0 = mLastCameraPosition - lookAt;
+                    var dir1 = curState.RawPosition - lookAt;
+                    if (dir0.sqrMagnitude > 0.01f && dir1.sqrMagnitude > 0.01f)
+                        curState.PositionDampingBypass = UnityVectorExtensions.SafeFromToRotation(
+                            dir0, dir1, curState.ReferenceUp).eulerAngles;
+                }
+                mLastTargetPosition = targetPosition;
+                mLastCameraPosition = curState.RawPosition;
             }
         }
 
@@ -364,8 +406,7 @@ namespace Cinemachine
         }
 
         // Make sure this is calld only once per frame
-        private float GetTargetHeading(
-            float currentHeading, Quaternion targetOrientation, float deltaTime)
+        private float GetTargetHeading(float currentHeading, Quaternion targetOrientation)
         {
             if (m_BindingMode == BindingMode.SimpleFollowWithWorldUp)
                 return 0;
@@ -394,18 +435,21 @@ namespace Cinemachine
             }
 
             // Process the velocity and derive the heading from it.
-            int filterSize = m_Heading.m_VelocityFilterStrength * 5;
-            if (mHeadingTracker == null || mHeadingTracker.FilterSize != filterSize)
-                mHeadingTracker = new HeadingTracker(filterSize);
-            mHeadingTracker.DecayHistory();
             Vector3 up = targetOrientation * Vector3.up;
             velocity = velocity.ProjectOntoPlane(up);
+            if (headingDef != Heading.HeadingDefinition.TargetForward)
+            {
+                int filterSize = m_Heading.m_VelocityFilterStrength * 5;
+                if (mHeadingTracker == null || mHeadingTracker.FilterSize != filterSize)
+                    mHeadingTracker = new HeadingTracker(filterSize);
+                mHeadingTracker.DecayHistory();
+                if (!velocity.AlmostZero())
+                    mHeadingTracker.Add(velocity);
+                velocity = mHeadingTracker.GetReliableHeading();
+            }
             if (!velocity.AlmostZero())
-                mHeadingTracker.Add(velocity);
-
-            velocity = mHeadingTracker.GetReliableHeading();
-            if (!velocity.AlmostZero())
-                return UnityVectorExtensions.SignedAngle(targetOrientation * Vector3.forward, velocity, up);
+                return UnityVectorExtensions.SignedAngle(
+                    targetOrientation * Vector3.forward, velocity, up);
 
             // If no reliable heading, then stay where we are.
             return currentHeading;

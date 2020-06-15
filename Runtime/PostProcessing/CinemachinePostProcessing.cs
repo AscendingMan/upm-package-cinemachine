@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using UnityEngine.SceneManagement;
 #if CINEMACHINE_POST_PROCESSING_V2
 using System.Collections.Generic;
 using UnityEngine.Rendering.PostProcessing;
@@ -9,11 +10,16 @@ namespace Cinemachine.PostFX
 #if !CINEMACHINE_POST_PROCESSING_V2
     // Workaround for Unity scripting bug
     [AddComponentMenu("")] // Hide in menu
-    public class CinemachinePostProcessing : MonoBehaviour {}
+    public class CinemachinePostProcessing : CinemachineExtension 
+    {
+        protected override void PostPipelineStageCallback(
+            CinemachineVirtualCameraBase vcam,
+            CinemachineCore.Stage stage, ref CameraState state, float deltaTime) {}
+    }
 #else
     /// <summary>
     /// This behaviour is a liaison between Cinemachine with the Post-Processing v2 module.  You must
-    /// have the Post-Processing V2 stack asset store package installed in order to use this behaviour.
+    /// have the Post-Processing V2 stack package installed in order to use this behaviour.
     ///
     /// As a component on the Virtual Camera, it holds
     /// a Post-Processing Profile asset that will be applied to the Unity camera whenever
@@ -32,52 +38,101 @@ namespace Cinemachine.PostFX
     [SaveDuringPlay]
     public class CinemachinePostProcessing : CinemachineExtension
     {
-        [Tooltip("If checked, then the Focus Distance will be set to the distance between the camera and the LookAt target.  Requires DepthOfField effect in the Profile")]
+        /// <summary>This is obsolete, please use m_FocusTracking</summary>
+        [HideInInspector]
         public bool m_FocusTracksTarget;
 
-        [Tooltip("Offset from target distance, to be used with Focus Tracks Target.  Offsets the sharpest point away from the LookAt target.")]
+        /// <summary>The reference object for focus tracking</summary>
+        public enum FocusTrackingMode
+        {
+            /// <summary>No focus tracking</summary>
+            None,
+            /// <summary>Focus offset is relative to the LookAt target</summary>
+            LookAtTarget,
+            /// <summary>Focus offset is relative to the Follow target</summary>
+            FollowTarget,
+            /// <summary>Focus offset is relative to the Custom target set here</summary>
+            CustomTarget,
+            /// <summary>Focus offset is relative to the camera</summary>
+            Camera
+        };
+
+        /// <summary>If the profile has the appropriate overrides, will set the base focus 
+        /// distance to be the distance from the selected target to the camera.
+        /// The Focus Offset field will then modify that distance</summary>
+        [Tooltip("If the profile has the appropriate overrides, will set the base focus "
+            + "distance to be the distance from the selected target to the camera."
+            + "The Focus Offset field will then modify that distance.")]
+        public FocusTrackingMode m_FocusTracking;
+
+        /// <summary>The target to use if Focus Tracks Target is set to Custom Target</summary>
+        [Tooltip("The target to use if Focus Tracks Target is set to Custom Target")]
+        public Transform m_FocusTarget;
+
+        /// <summary>Offset from target distance, to be used with Focus Tracks Target.  
+        /// Offsets the sharpest point away from the location of the focus target</summary>
+        [Tooltip("Offset from target distance, to be used with Focus Tracks Target.  "
+            + "Offsets the sharpest point away from the location of the focus target.")]
         public float m_FocusOffset;
 
         [Tooltip("This Post-Processing profile will be applied whenever this virtual camera is live")]
         public PostProcessProfile m_Profile;
 
-        bool mCachedProfileIsInvalid = true;
-        PostProcessProfile mProfileCopy;
-        public PostProcessProfile Profile { get { return mProfileCopy != null ? mProfileCopy : m_Profile; } }
+        class VcamExtraState
+        {
+            public PostProcessProfile mProfileCopy;
+
+            public void CreateProfileCopy(PostProcessProfile source)
+            {
+                DestroyProfileCopy();
+                PostProcessProfile profile = ScriptableObject.CreateInstance<PostProcessProfile>();
+                if (source != null)
+                {
+                    foreach (var item in source.settings)
+                    {
+                        var itemCopy = Instantiate(item);
+                        profile.settings.Add(itemCopy);
+                    }
+                }
+                mProfileCopy = profile;
+            }
+
+            public void DestroyProfileCopy()
+            {
+                if (mProfileCopy != null)
+                    RuntimeUtility.DestroyObject(mProfileCopy);
+                mProfileCopy = null;
+            }
+        }
 
         /// <summary>True if the profile is enabled and nontrivial</summary>
         public bool IsValid { get { return m_Profile != null && m_Profile.settings.Count > 0; } }
 
         /// <summary>Called by the editor when the shared asset has been edited</summary>
-        public void InvalidateCachedProfile() { mCachedProfileIsInvalid = true; }
-
-        void CreateProfileCopy()
+        public void InvalidateCachedProfile()
         {
-            DestroyProfileCopy();
-            PostProcessProfile profile = ScriptableObject.CreateInstance<PostProcessProfile>();
-            if (m_Profile != null)
-            {
-                foreach (var item in m_Profile.settings)
-                {
-                    var itemCopy = Instantiate(item);
-                    profile.settings.Add(itemCopy);
-                }
-            }
-            mProfileCopy = profile;
-            mCachedProfileIsInvalid = false;
+            var list = GetAllExtraStates<VcamExtraState>();
+            for (int i = 0; i < list.Count; ++i)
+                list[i].DestroyProfileCopy();
         }
 
-        void DestroyProfileCopy()
+        protected override void Awake()
         {
-            if (mProfileCopy != null)
-                RuntimeUtility.DestroyObject(mProfileCopy);
-            mProfileCopy = null;
+            base.Awake();
+
+            // Map legacy m_FocusTracksTarget to focus mode
+            if (m_FocusTracksTarget)
+            {
+                m_FocusTracking = VirtualCamera.LookAt != null 
+                    ? FocusTrackingMode.LookAtTarget : FocusTrackingMode.Camera;
+            }
+            m_FocusTracksTarget = false;
         }
 
         protected override void OnDestroy()
         {
+            InvalidateCachedProfile();
             base.OnDestroy();
-            DestroyProfileCopy();
         }
 
         protected override void PostPipelineStageCallback(
@@ -88,29 +143,41 @@ namespace Cinemachine.PostFX
             // GML todo: what about collider?
             if (stage == CinemachineCore.Stage.Aim)
             {
+                var extra = GetExtraState<VcamExtraState>(vcam);
                 if (!IsValid)
-                    DestroyProfileCopy();
+                    extra.DestroyProfileCopy();
                 else
                 {
+                    var profile = m_Profile;
+
                     // Handle Follow Focus
-                    if (!m_FocusTracksTarget)
-                        DestroyProfileCopy();
+                    if (m_FocusTracking == FocusTrackingMode.None)
+                        extra.DestroyProfileCopy();
                     else
                     {
-                        if (mProfileCopy == null || mCachedProfileIsInvalid)
-                            CreateProfileCopy();
+                        if (extra.mProfileCopy == null)
+                            extra.CreateProfileCopy(m_Profile);
+                        profile = extra.mProfileCopy;
                         DepthOfField dof;
-                        if (mProfileCopy.TryGetSettings(out dof))
+                        if (profile.TryGetSettings(out dof))
                         {
                             float focusDistance = m_FocusOffset;
-                            if (state.HasLookAt)
-                                focusDistance += (state.FinalPosition - state.ReferenceLookAt).magnitude;
+                            Transform focusTarget = null;
+                            switch (m_FocusTracking)
+                            {
+                                default: break;
+                                case FocusTrackingMode.LookAtTarget: focusTarget = VirtualCamera.LookAt; break;
+                                case FocusTrackingMode.FollowTarget: focusTarget = VirtualCamera.Follow; break;
+                                case FocusTrackingMode.CustomTarget: focusTarget = m_FocusTarget; break;
+                            }
+                            if (focusTarget != null)
+                                focusDistance += (state.FinalPosition - focusTarget.position).magnitude;
                             dof.focusDistance.value = Mathf.Max(0, focusDistance);
                         }
                     }
 
                     // Apply the post-processing
-                    state.AddCustomBlendable(new CameraState.CustomBlendable(this, 1));
+                    state.AddCustomBlendable(new CameraState.CustomBlendable(profile, 1));
                 }
             }
         }
@@ -143,13 +210,13 @@ namespace Cinemachine.PostFX
             for (int i = 0; i < numBlendables; ++i)
             {
                 var b = state.GetCustomBlendable(i);
-                CinemachinePostProcessing src = b.m_Custom as CinemachinePostProcessing;
-                if (!(src == null)) // in case it was deleted
+                var profile = b.m_Custom as PostProcessProfile;
+                if (!(profile == null)) // in case it was deleted
                 {
                     PostProcessVolume v = volumes[i];
                     if (firstVolume == null)
                         firstVolume = v;
-                    v.sharedProfile = src.Profile;
+                    v.sharedProfile = profile;
                     v.isGlobal = true;
                     v.priority = float.MaxValue-(numBlendables-i)-1;
                     v.weight = b.m_Weight;
@@ -214,22 +281,49 @@ namespace Cinemachine.PostFX
 
         static PostProcessLayer GetPPLayer(CinemachineBrain brain)
         {
-            PostProcessLayer layer = null;
-            if (mBrainToLayer.TryGetValue(brain, out layer))
-            {
-#if UNITY_EDITOR
-                // Maybe they added it since we last checked
-                if (layer != null || Application.isPlaying)
-#endif
-                return layer;
-            }
-            layer = brain.GetComponent<PostProcessLayer>();
-            mBrainToLayer[brain] = layer;
+            bool found = mBrainToLayer.TryGetValue(brain, out PostProcessLayer layer);
             if (layer != null)
-                brain.m_CameraCutEvent.AddListener(OnCameraCut);
+                return layer;   // layer is valid and in our lookup
+
+            if (found)
+            {
+                if (layer) // note: this is not the same check as (layer == null)
+                {
+                    // layer is a deleted object
+                    brain.m_CameraCutEvent.RemoveListener(OnCameraCut);
+                    mBrainToLayer.Remove(brain);
+                    layer = null;
+                }
+            }
             else
-                brain.m_CameraCutEvent.RemoveListener(OnCameraCut);
+            {
+                // Brain is not in our lookup - add it
+#if UNITY_2019_2_OR_NEWER
+                brain.TryGetComponent(out layer);
+#else
+                layer = brain.GetComponent<PostProcessLayer>();
+#endif
+                if (layer != null)
+                    brain.m_CameraCutEvent.AddListener(OnCameraCut); // valid layer
+#if UNITY_EDITOR
+                // Never add null in edit mode in case user adds a layer dynamically
+                if (Application.isPlaying)  
+#endif
+                    mBrainToLayer[brain] = layer;
+            }
             return layer;
+        }
+
+        static void OnSceneUnloaded(Scene scene)
+        {
+            var iter = mBrainToLayer.GetEnumerator();
+            while (iter.MoveNext())
+            {
+                var brain = iter.Current.Key;
+                if (brain != null)
+                    brain.m_CameraCutEvent.RemoveListener(OnCameraCut);
+            }
+            mBrainToLayer.Clear();
         }
 
 #if UNITY_EDITOR
@@ -242,6 +336,9 @@ namespace Cinemachine.PostFX
             // Afetr the brain pushes the state to the camera, hook in to the PostFX
             CinemachineCore.CameraUpdatedEvent.RemoveListener(ApplyPostFX);
             CinemachineCore.CameraUpdatedEvent.AddListener(ApplyPostFX);
+
+            // Clean up our resources
+            SceneManager.sceneUnloaded += OnSceneUnloaded;
         }
     }
 #endif

@@ -16,13 +16,6 @@ namespace Cinemachine
     [SaveDuringPlay]
     public class CinemachinePOV : CinemachineComponentBase
     {
-        /// <summary>Set this if the POV should be applied to the camera state before the body
-        /// position is calculated.  This is useful for body algorithms that use the rotation as input,
-        /// for example Framing Transposer</summary>
-        [Tooltip("Set this if the POV should be applied to the camera state before the body position is calculated.  "
-            + "This is useful for body algorithms that use the rotation as input, for example Framing Transposer.")]
-        public bool m_ApplyBeforeBody = false;
-
         /// <summary>
         /// Defines the recentering target: Recentering goes here
         /// </summary>
@@ -67,6 +60,11 @@ namespace Cinemachine
         [Tooltip("Controls how automatic recentering of the Horizontal axis is accomplished")]
         public AxisState.Recentering m_HorizontalRecentering = new AxisState.Recentering(false, 1, 2);
 
+        /// <summary>Obsolete - no longer used</summary>
+        [HideInInspector]
+        [Tooltip("Obsolete - no longer used")]
+        public bool m_ApplyBeforeBody;
+
         /// <summary>True if component is enabled and has a LookAt defined</summary>
         public override bool IsValid { get { return enabled; } }
 
@@ -82,25 +80,38 @@ namespace Cinemachine
             m_HorizontalRecentering.Validate();
         }
 
-        public override void PrePipelineMutateCameraState(ref CameraState curState, float deltaTime)
+        private void OnEnable()
         {
-            if (m_ApplyBeforeBody)
-                ApplyPOV(ref curState, deltaTime);
+            UpdateInputAxisProvider();
         }
+        
+        /// <summary>
+        /// API for the inspector.  Internal use only
+        /// </summary>
+        public void UpdateInputAxisProvider()
+        {
+            m_HorizontalAxis.SetInputAxisProvider(0, null);
+            m_VerticalAxis.SetInputAxisProvider(1, null);
+            if (VirtualCamera != null)
+            {
+                var provider = VirtualCamera.GetInputAxisProvider();
+                if (provider != null)
+                {
+                    m_HorizontalAxis.SetInputAxisProvider(0, provider);
+                    m_VerticalAxis.SetInputAxisProvider(1, provider);
+                }
+            }
+        }
+
+        /// <summary>Does nothing</summary>
+        /// <param name="state"></param>
+        /// <param name="deltaTime"></param>
+        public override void PrePipelineMutateCameraState(ref CameraState state, float deltaTime) {}
 
         /// <summary>Applies the axis values and orients the camera accordingly</summary>
         /// <param name="curState">The current camera state</param>
         /// <param name="deltaTime">Used for calculating damping.  Not used.</param>
         public override void MutateCameraState(ref CameraState curState, float deltaTime)
-        {
-            if (!m_ApplyBeforeBody)
-                ApplyPOV(ref curState, deltaTime);
-        }
-
-        /// <summary>Applies the axis values and orients the camera accordingly</summary>
-        /// <param name="curState">The current camera state</param>
-        /// <param name="deltaTime">Used for calculating damping.  Not used.</param>
-        void ApplyPOV(ref CameraState curState, float deltaTime)
         {
             if (!IsValid)
                 return;
@@ -153,6 +164,17 @@ namespace Cinemachine
             return Vector2.zero;
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation.  
+        /// Procedural placement then takes over
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            SetAxesForRotation(rot);
+        }
+
         /// <summary>Notification that this virtual camera is going live.
         /// Base class implementation does nothing.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
@@ -169,30 +191,34 @@ namespace Cinemachine
             m_VerticalRecentering.CancelRecentering();
             if (fromCam != null && transitionParams.m_InheritPosition)
             {
-                Vector3 up = VcamState.ReferenceUp;
-                Quaternion targetRot = fromCam.State.RawOrientation;
-                Vector3 fwd = Vector3.forward;
-                Transform parent = VirtualCamera.transform.parent;
-                if (parent != null)
-                    fwd = parent.rotation * fwd;
-
-                m_HorizontalAxis.Value = 0;
-                m_HorizontalAxis.Reset();
-                Vector3 targetFwd = targetRot * Vector3.forward;
-                Vector3 a = fwd.ProjectOntoPlane(up);
-                Vector3 b = targetFwd.ProjectOntoPlane(up);
-                if (!a.AlmostZero() && !b.AlmostZero())
-                    m_HorizontalAxis.Value = Vector3.SignedAngle(a, b, up);
-
-                m_VerticalAxis.Value = 0;
-                m_VerticalAxis.Reset();
-                fwd = Quaternion.AngleAxis(m_HorizontalAxis.Value, up) * fwd;
-                Vector3 right = Vector3.Cross(up, fwd);
-                if (!right.AlmostZero())
-                    m_VerticalAxis.Value = Vector3.SignedAngle(fwd, targetFwd, right);
+                SetAxesForRotation(fromCam.State.RawOrientation);
                 return true;
             }
             return false;
+        }
+
+        void SetAxesForRotation(Quaternion targetRot)
+        {
+            Vector3 up = VcamState.ReferenceUp;
+            Vector3 fwd = Vector3.forward;
+            Transform parent = VirtualCamera.transform.parent;
+            if (parent != null)
+                fwd = parent.rotation * fwd;
+
+            m_HorizontalAxis.Value = 0;
+            m_HorizontalAxis.Reset();
+            Vector3 targetFwd = targetRot * Vector3.forward;
+            Vector3 a = fwd.ProjectOntoPlane(up);
+            Vector3 b = targetFwd.ProjectOntoPlane(up);
+            if (!a.AlmostZero() && !b.AlmostZero())
+                m_HorizontalAxis.Value = Vector3.SignedAngle(a, b, up);
+
+            m_VerticalAxis.Value = 0;
+            m_VerticalAxis.Reset();
+            fwd = Quaternion.AngleAxis(m_HorizontalAxis.Value, up) * fwd;
+            Vector3 right = Vector3.Cross(up, fwd);
+            if (!right.AlmostZero())
+                m_VerticalAxis.Value = Vector3.SignedAngle(fwd, targetFwd, right);
         }
     }
 }

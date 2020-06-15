@@ -10,12 +10,17 @@ using Cinemachine;
 
 //namespace Cinemachine.Timeline
 //{
-    /// <summary>
-    /// Internal use only.  Not part of the public API.
-    /// </summary>
+/// <summary>
+/// Internal use only.  Not part of the public API.
+/// </summary>
     public sealed class CinemachineShot : PlayableAsset, IPropertyPreview
     {
-        public ExposedReference<CinemachineVirtualCameraBase> VirtualCamera;
+#if !UNITY_2019_2_OR_NEWER
+    [HideInInspector]
+#endif
+    public string DisplayName;
+
+    public ExposedReference<CinemachineVirtualCameraBase> VirtualCamera;
 
         public override Playable CreatePlayable(PlayableGraph graph, GameObject owner)
         {

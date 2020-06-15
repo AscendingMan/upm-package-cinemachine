@@ -22,19 +22,19 @@ namespace Cinemachine
 
         VcamPipelineStageSubeditorSet mPipelineSet = new VcamPipelineStageSubeditorSet();
 
-        protected override List<string> GetExcludedPropertiesInInspector()
+        protected override void GetExcludedPropertiesInInspector(List<string> excluded)
         {
-            List<string> excluded = base.GetExcludedPropertiesInInspector();
+            base.GetExcludedPropertiesInInspector(excluded);
             excluded.Add(FieldPath(x => x.m_Rigs)); // can't use HideInInspector for this
             excluded.Add(FieldPath(x => x.m_Orbits));
             excluded.Add(FieldPath(x => x.m_SplineCurvature));
-            return excluded;
         }
 
         protected override void OnEnable()
         {
             base.OnEnable();
             mPipelineSet.CreateSubeditors(this);
+            Target.UpdateInputAxisProvider();
         }
 
         protected override void OnDisable()
@@ -140,7 +140,7 @@ namespace Cinemachine
             else if (GUIUtility.hotControl == 0 && Target.UserIsDragging)
             {
                 // We're not dragging anything now, but we were
-                InspectorUtility.RepaintGameView(Target);
+                InspectorUtility.RepaintGameView();
                 Target.UserIsDragging = false;
             }
         }

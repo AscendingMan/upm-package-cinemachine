@@ -34,17 +34,20 @@ namespace Cinemachine
 #else
     [ExecuteInEditMode]
 #endif
+    [ExcludeFromPreset]
     [AddComponentMenu("Cinemachine/CinemachineClearShot")]
     public class CinemachineClearShot : CinemachineVirtualCameraBase
     {
         /// <summary>Default object for the camera children to look at (the aim target), if not specified in a child camera.  May be empty.</summary>
         [Tooltip("Default object for the camera children to look at (the aim target), if not specified in a child camera.  May be empty if all children specify targets of their own.")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_LookAt = null;
 
         /// <summary>Default object for the camera children wants to move with (the body target), if not specified in a child camera.  May be empty.</summary>
         [Tooltip("Default object for the camera children wants to move with (the body target), if not specified in a child camera.  May be empty if all children specify targets of their own.")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_Follow = null;
 
         /// <summary>When enabled, the current camera and blend will be indicated in the game window, for debugging</summary>
@@ -143,6 +146,19 @@ namespace Cinemachine
             base.OnTargetObjectWarped(target, positionDelta);
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            UpdateListOfChildren();
+            foreach (var vcam in m_ChildCameras)
+                vcam.ForceCameraPosition(pos, rot);
+            base.ForceCameraPosition(pos, rot);
+        }
+        
         /// <summary>Internal use only.  Called by CinemachineCore at designated update time
         /// so the vcam can position itself and track its targets.  This implementation
         /// updates all the children, chooses the best one, and implements any required blending.</summary>
@@ -150,13 +166,10 @@ namespace Cinemachine
         /// <param name="deltaTime">Delta time for time-based effects (ignore if less than 0)</param>
         public override void InternalUpdateCameraState(Vector3 worldUp, float deltaTime)
         {
-            if (!PreviousStateIsValid)
-                deltaTime = -1;
-
             // Choose the best camera
             UpdateListOfChildren();
             ICinemachineCamera previousCam = LiveChild;
-            LiveChild = ChooseCurrentCamera(worldUp, deltaTime);
+            LiveChild = ChooseCurrentCamera(worldUp);
 
             // Are we transitioning cameras?
             if (previousCam != LiveChild && LiveChild != null)
@@ -226,6 +239,7 @@ namespace Cinemachine
         public void OnTransformChildrenChanged()
         {
             InvalidateListOfChildren();
+            UpdateListOfChildren();
         }
 
         ///  Will only be called if Unity Editor - never in build
@@ -297,7 +311,7 @@ namespace Cinemachine
         private bool mRandomizeNow = false;
         private  CinemachineVirtualCameraBase[] m_RandomizedChilden = null;
 
-        private ICinemachineCamera ChooseCurrentCamera(Vector3 worldUp, float deltaTime)
+        private ICinemachineCamera ChooseCurrentCamera(Vector3 worldUp)
         {
             if (m_ChildCameras == null || m_ChildCameras.Length == 0)
             {
@@ -350,7 +364,7 @@ namespace Cinemachine
                 }
 
                 // Is it pending?
-                if (deltaTime >= 0)
+                if (PreviousStateIsValid)
                 {
                     if (mPendingActivationTime != 0 && mPendingCamera == best)
                     {
@@ -375,7 +389,7 @@ namespace Cinemachine
             mPendingCamera = null;
 
             // Can we activate it now?
-            if (deltaTime >= 0 && mActivationTime > 0)
+            if (PreviousStateIsValid && mActivationTime > 0)
             {
                 if (m_ActivateAfter > 0
                     || (now - mActivationTime) < m_MinDuration)

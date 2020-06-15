@@ -19,6 +19,7 @@ namespace Cinemachine
 #else
     [ExecuteInEditMode]
 #endif
+    [ExcludeFromPreset]
     [AddComponentMenu("Cinemachine/CinemachineMixingCamera")]
     public class CinemachineMixingCamera : CinemachineVirtualCameraBase
     {
@@ -100,6 +101,7 @@ namespace Cinemachine
         /// <returns>The weight of the camera.  Valid only if camera is active and enabled.</returns>
         public float GetWeight(CinemachineVirtualCameraBase vcam)
         {
+            ValidateListOfChildren();
             int index;
             if (m_indexMap.TryGetValue(vcam, out index))
                 return GetWeight(index);
@@ -113,6 +115,7 @@ namespace Cinemachine
         /// <param name="w">The weight to set.  Can be any non-negative number.</param>
         public void SetWeight(CinemachineVirtualCameraBase vcam, float w)
         {
+            ValidateListOfChildren();
             int index;
             if (m_indexMap.TryGetValue(vcam, out index))
                 SetWeight(index, w);
@@ -150,6 +153,19 @@ namespace Cinemachine
             base.OnTargetObjectWarped(target, positionDelta);
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            ValidateListOfChildren();
+            foreach (var vcam in m_ChildCameras)
+                vcam.ForceCameraPosition(pos, rot);
+            base.ForceCameraPosition(pos, rot);
+        }
+        
         /// <summary>Makes sure the internal child cache is up to date</summary>
         protected override void OnEnable()
         {

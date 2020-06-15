@@ -24,11 +24,13 @@ namespace Cinemachine
         /// <summary>Object for the camera children to look at (the aim target)</summary>
         [Tooltip("Object for the camera children to look at (the aim target).")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_LookAt = null;
 
         /// <summary>Object for the camera children wants to move with (the body target)</summary>
         [Tooltip("Object for the camera children wants to move with (the body target).")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_Follow = null;
 
         /// <summary>Specifies the LensSettings of this Virtual Camera.
@@ -99,6 +101,41 @@ namespace Cinemachine
             base.OnTargetObjectWarped(target, positionDelta);
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            PreviousStateIsValid = false;
+            transform.position = pos;
+            transform.rotation = rot;
+            m_State.RawPosition = pos;
+            m_State.RawOrientation = rot;
+
+            UpdateComponentCache();
+            for (int i = 0; i < m_Components.Length; ++i)
+                if (m_Components[i] != null)
+                    m_Components[i].ForceCameraPosition(pos, rot);
+
+            base.ForceCameraPosition(pos, rot);
+        }
+        
+        /// <summary>
+        /// Query components and extensions for the maximum damping time.
+        /// </summary>
+        /// <returns>Highest damping setting in this vcam</returns>
+        public override float GetMaxDampTime()
+        {
+            float maxDamp = base.GetMaxDampTime();
+            UpdateComponentCache();
+            for (int i = 0; i < m_Components.Length; ++i)
+                if (m_Components[i] != null)
+                    maxDamp = Mathf.Max(maxDamp, m_Components[i].GetMaxDampTime());
+            return maxDamp;
+        }
+
         /// <summary>If we are transitioning from another FreeLook, grab the axis values from it.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
         /// <param name="worldUp">Default world Up, set by the CinemachineBrain</param>
@@ -142,8 +179,8 @@ namespace Cinemachine
         /// <param name="deltaTime">Delta time for time-based effects (ignore if less than 0)</param>
         override public void InternalUpdateCameraState(Vector3 worldUp, float deltaTime)
         {
-            if (!PreviousStateIsValid)
-                deltaTime = -1;
+            FollowTargetAttachment = 1;
+            LookAtTargetAttachment = 1;
 
             // Initialize the camera state, in case the game object got moved in the editor
             m_State = PullStateFromVirtualCamera(worldUp, ref m_Lens);
@@ -187,7 +224,7 @@ namespace Cinemachine
                 if (mCachedLookAtTargetVcam != null)
                     state.ReferenceLookAt = mCachedLookAtTargetVcam.State.FinalPosition;
                 else
-                    state.ReferenceLookAt = lookAtTarget.position;
+                    state.ReferenceLookAt = TargetPositionCache.GetTargetPosition(lookAtTarget);
             }
         }
 
@@ -196,22 +233,35 @@ namespace Cinemachine
         {
             UpdateComponentCache();
 
+            // Extensions first
+            InvokePrePipelineMutateCameraStateCallback(this, ref state, deltaTime);
+
             // Apply the component pipeline
             for (CinemachineCore.Stage stage = CinemachineCore.Stage.Body;
-                stage < CinemachineCore.Stage.Finalize; ++stage)
+                stage <= CinemachineCore.Stage.Finalize; ++stage)
             {
                 var c = m_Components[(int)stage];
                 if (c != null)
                     c.PrePipelineMutateCameraState(ref state, deltaTime);
             }
+            CinemachineComponentBase postAimBody = null;
             for (CinemachineCore.Stage stage = CinemachineCore.Stage.Body;
-                stage < CinemachineCore.Stage.Finalize; ++stage)
+                stage <= CinemachineCore.Stage.Finalize; ++stage)
             {
+                if (stage == CinemachineCore.Stage.Finalize && postAimBody != null)
+                    postAimBody.MutateCameraState(ref state, deltaTime);
+
                 var c = m_Components[(int)stage];
                 if (c != null)
-                    c.MutateCameraState(ref state, deltaTime);
+                {
+                    if (stage == CinemachineCore.Stage.Body && c.BodyAppliesAfterAim)
+                        postAimBody = c;
+                    else
+                        c.MutateCameraState(ref state, deltaTime);
+                }
                 else if (stage == CinemachineCore.Stage.Aim)
                     state.BlendHint |= CameraState.BlendHintValue.IgnoreLookAtTarget; // no aim
+
                 InvokePostPipelineStageCallback(this, stage, ref state, deltaTime);
             }
 
@@ -256,10 +306,10 @@ namespace Cinemachine
                 }
             }
 #endif
-            if (m_Components != null && m_Components.Length == (int)CinemachineCore.Stage.Finalize)
+            if (m_Components != null && m_Components.Length == (int)CinemachineCore.Stage.Finalize + 1)
                 return; // up to date
 
-            m_Components = new CinemachineComponentBase[(int)CinemachineCore.Stage.Finalize];
+            m_Components = new CinemachineComponentBase[(int)CinemachineCore.Stage.Finalize + 1];
             var existing = GetComponents<CinemachineComponentBase>();
             for (int i = 0; existing != null && i < existing.Length; ++i)
                 m_Components[(int)existing[i].Stage] = existing[i];

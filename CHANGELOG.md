@@ -4,20 +4,89 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [2.4.0-preview.2] - 2019-09-03
+## [2.6.1] - 2020-00-00
+### New Bugfixes
+- Bugfix: vertical group composition was not composing properly
+
+
+## [2.6.0] - 2020-06-04
+### New Features and Bugfixes
+- Added AxisState.IInputProvider API to better support custom input systems
+- Added CinemachineInpiutProvider behaviour to support Unity's new input system
+- Added Timeline Scrubbing cache: when enabled, simulates damping and noise when scrubbing in timeline
+- Added ManualUpdate mode to the Brain, to allow for custom game loop logic
+- VolumeSettings/PostProcessing: added ability to choose custom target for focus tracking
+- Added CinemachineRecomposer for timeline-tweaking of procedural or recorded vcam Aim output
+- Added GroupWeightManipulator for animating group member weights
+- Impulse: Added PropagationSpeed, to allow the impulse to travel outward in a wave
+- Impulse: added support for continuous impulses
+- Added CinemachineIndependentImpulseListener, to give ImpulseListener ability to any game object
+- Added 3rdPersonFollow and 3rdPersonAim for dead-accurate 3rd-person aiming camera
+- Added ForceCameraPosition API of virtual cameras, to manually initialize a camera's position and rotation
+- Added example scenes: Aiming Rig and Dual Target to show different 3rd person cmera styles
+- FramingTransposer does its work after Aim, so it plays better with Aim components.
+- Framing Transposer: add Damped Rotations option.  If unchecked, changes to the vcam's rotation will bypass Damping, and only target motion will be damped.
+- Refactored Lookahead - better stability.  New behaviour may require some parameter adjustment in existing content
+- Composer and Framing Transposer: improved handling at edge of hard zone (no juddering)
+- Orbital Transposer / FreeLook: improved damping when target is moving
+- CustomBlends editor UX improvements: allow direct editing of vcam names, as well as dropdown
+- Add Convert to TargetGroup option on LookAt and Follow target fields
+- Confiner: improved stability when ConfineScreenEdges is selected and confing shape is too small
+- Extensions now have PrePipelineMutateState callback
+- CinemachineCore.UniformDeltaTimeOverride works in Edit mode
+- Added TargetAttachment property to vcams.  Normally 1, this can be used to relax attention to targets - effectively a damping override
+- Bugfix: Blend Update Method handling was incorrect and caused judder in some circumstances
+- Bugfix: VolumeSettings blending was popping when weight was epsilon if volume altered a non-lerpable value
+- Bugfix (1234813) - Check for deleted freelooks
+- Bugfix (1219867) - vcam popping on disable if blending
+- Bugfix (1214301, 1213836) - disallow structural change when editing vcam prefabs
+- Bugfix (1213471, 1213434): add null check in editor
+- Bugfix (1213488): no solo for prefab vcams
+- Bugfix (1213819): repaintGameView on editor change
+- Bugfix (1217306): target group position drifting when empty or when members are descendants of the group
+- Bugfix (1218695): Fully qualify UnityEditor.Menu to avoid compile errors in some circumstances
+- Bugfix (1222740): Binding Modes, that don't have control over axis value range, are not affected by it. 
+- Bugfix (1227606): Timeline preview and playmode not the same for composer with hand-animated rotations
+- Bugfix: Confiner's cache is reset, when bounding shape/volume is changed.
+- Bugfix (1232146): Vcam no longer jerks at edge of confiner bound box.
+- Bugfix (1234966): CompositeCollider scale was applied twice.
+
+
+## [2.5.0] - 2020-01-15
+### Support HDRP 7 and URP simultaneously
+- Accommodate simultaneous precesnce of HDRP and URP
+- Regression fix: Axis was always recentered in Edit mode, even if recentering is off
+
+
+## [2.4.0] - 2020-01-10
 ### HDRP 7 support and bugfixes
 - Storyboard: added global mute function
+- New vcams are by default created matching the scene view camera
 - Added ApplyBeforeBody option to POV component, to support working with FramingTransposer
 - Added RectenterTarget to POV component
 - Added OnTransitionFromCamera callback to extensions
+- Added Damping to SameAsFollowTarget and HardLockToTarget components
+- URP 7.1.3: added CinemachinePixelPerfect extension
 - Added Speed Mode to AxisState, to support direct axis control without max speed
 - New example scene: OverTheShoulderAim illustrating how to do over-the-shoulder TPS cam, with Normal and Aim modes
 - Impulse Manager: added option to ignore timescale
 - Framing Transposer: added OnTransition handling for camera rotation if InheritPosition
 - Upgrade to support HDRP and Universal RP 7.0.0 API
+- Upgrade to support HDRP and Universal RP 7.1.0 API
 - Removed Resources diretories
-- Bugfix: added EmbeddedAssetHelper null check
+- Sample scenes now available via package manager
+- Added optional "Display Name" field to Cinemachine Shot in Timeline
+- Added "Adopt Current Camera Settings" item to vcam inspector context menu
+- Composer and FramingTransposer: allow the dead zone to extend to 2, and the Screen x,Y can range from -0.5 to 1.5
+- HDRP: lens presets include physical settings if physical camera
 - Regression Fix: Framing Transposer: ignore LookAt target.  Use Follow exclusively
+- Bugfix: Framing Transposer was not handling dynamic changes to FOV properly
+- Bugfix: PostProcessing extension was not handling standby update correctly when on Manager Vcams
+- Bugfix: PostProcessing extension was leaking a smallamounts of memory when scenes were unloaded
+- Bugfixes: (fogbugz 1193311, 1193307, 1192423, 1192414): disallow presets for vcams
+- Bugfix: In some heading modes, FreeLook was improperly modifying the axes when activated
+- Bugfix: Orbital transposer was improperly filtering the heading in TargetForward heading mode
+- Bugfix: added EmbeddedAssetHelper null check
 - Bugfix: composer screen guides drawn in correct place for physical camera
 - Bugfix: FreeLook was not respecting wait time for X axis recentering
 - Bugfix: FreeLook X axis was not always perfectly synched between rigs

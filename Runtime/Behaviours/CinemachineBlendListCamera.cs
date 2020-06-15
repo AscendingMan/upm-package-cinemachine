@@ -19,17 +19,20 @@ namespace Cinemachine
 #else
     [ExecuteInEditMode]
 #endif
+    [ExcludeFromPreset]
     [AddComponentMenu("Cinemachine/CinemachineBlendListCamera")]
     public class CinemachineBlendListCamera : CinemachineVirtualCameraBase
     {
         /// <summary>Default object for the camera children to look at (the aim target), if not specified in a child rig.  May be empty</summary>
         [Tooltip("Default object for the camera children to look at (the aim target), if not specified in a child camera.  May be empty if all of the children define targets of their own.")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_LookAt = null;
 
         /// <summary>Default object for the camera children wants to move with (the body target), if not specified in a child rig.  May be empty</summary>
         [Tooltip("Default object for the camera children wants to move with (the body target), if not specified in a child camera.  May be empty if all of the children define targets of their own.")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_Follow = null;
 
         /// <summary>When enabled, the current camera and blend will be indicated in the game window, for debugging</summary>
@@ -130,6 +133,19 @@ namespace Cinemachine
             base.OnTargetObjectWarped(target, positionDelta);
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            UpdateListOfChildren();
+            foreach (var vcam in m_ChildCameras)
+                vcam.ForceCameraPosition(pos, rot);
+            base.ForceCameraPosition(pos, rot);
+        }
+
         /// <summary>Notification that this virtual camera is going live.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
         /// <param name="worldUp">Default world Up, set by the CinemachineBrain</param>
@@ -157,7 +173,10 @@ namespace Cinemachine
         public override void InternalUpdateCameraState(Vector3 worldUp, float deltaTime)
         {
             if (!PreviousStateIsValid)
-                deltaTime = -1;
+            {
+                mCurrentInstruction = -1;
+                mActiveBlend = null;
+            }
 
             UpdateListOfChildren();
             AdvanceCurrentInstruction(deltaTime);
@@ -332,8 +351,11 @@ namespace Cinemachine
                 mCurrentInstruction = m_Instructions.Length - 1;
             }
 
-            var minHold = mCurrentInstruction < m_Instructions.Length - 1 || m_Loop ? 0 : float.MaxValue;
-            if (now - mActivationTime > Mathf.Max(minHold, m_Instructions[mCurrentInstruction].m_Hold))
+            var holdTime = m_Instructions[mCurrentInstruction].m_Hold 
+                + m_Instructions[mCurrentInstruction].m_Blend.m_Time;
+            var minHold = mCurrentInstruction < m_Instructions.Length - 1 || m_Loop 
+                ? 0 : float.MaxValue;
+            if (now - mActivationTime > Mathf.Max(minHold, holdTime))
             {
                 mActivationTime = now;
                 ++mCurrentInstruction;

@@ -1,3 +1,4 @@
+using System;
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
@@ -9,11 +10,10 @@ namespace Cinemachine.Editor
     {
         private UnityEditorInternal.ReorderableList mTargetList;
 
-        protected override List<string> GetExcludedPropertiesInInspector()
+        protected override void GetExcludedPropertiesInInspector(List<string> excluded)
         {
-            List<string> excluded = base.GetExcludedPropertiesInInspector();
+            base.GetExcludedPropertiesInInspector(excluded);
             excluded.Add(FieldPath(x => x.m_Targets));
-            return excluded;
         }
 
         void OnEnable()
@@ -30,14 +30,36 @@ namespace Cinemachine.Editor
                 SetupTargetList();
             EditorGUI.BeginChangeCheck();
             mTargetList.DoLayoutList();
+            DisplayErrorMessageForDescendants();
             if (EditorGUI.EndChangeCheck())
                 serializedObject.ApplyModifiedProperties();
+        }
+
+        void DisplayErrorMessageForDescendants()
+        {
+            String indices = "";
+            for (int i = 0; i < Target.m_Targets.Length; ++i)
+            {
+                if (Target.m_Targets[i].target != null && Target.m_Targets[i].target.IsChildOf(Target.Transform))
+                {
+                    indices += i + ", ";
+                }
+            }
+
+            if (indices.Length > 0)
+            {
+                indices = indices.Substring(0, indices.Length - 2);
+                EditorGUILayout.HelpBox(
+                    "Group members at index {" + indices + "} are child gameobjects of the group. " +
+                    "This is not supported and may cause undefined behaviour. Unparent them from the group.",
+                    MessageType.Error);
+            }
         }
 
         void SetupTargetList()
         {
             float vSpace = 2;
-            float floatFieldWidth = EditorGUIUtility.singleLineHeight * 3f;
+            float floatFieldWidth = EditorGUIUtility.singleLineHeight * 3.5f;
             float hBigSpace = EditorGUIUtility.singleLineHeight * 2 / 3;
 
             mTargetList = new UnityEditorInternal.ReorderableList(
@@ -54,10 +76,10 @@ namespace Cinemachine.Editor
                     rect.position = pos;
                     EditorGUI.LabelField(rect, "Target");
 
-                    pos.x += rect.width + hBigSpace; rect.width = floatFieldWidth; rect.position = pos;
+                    pos.x += rect.width + hBigSpace; rect.width = floatFieldWidth + hBigSpace; rect.position = pos;
                     EditorGUI.LabelField(rect, "Weight");
 
-                    pos.x += rect.width + hBigSpace; rect.position = pos;
+                    pos.x += rect.width; rect.position = pos;
                     EditorGUI.LabelField(rect, "Radius");
                 };
 
@@ -74,12 +96,12 @@ namespace Cinemachine.Editor
                     EditorGUI.PropertyField(rect, elemProp.FindPropertyRelative(() => def.target), GUIContent.none);
 
                     float oldWidth = EditorGUIUtility.labelWidth;
-                    EditorGUIUtility.labelWidth = EditorGUIUtility.singleLineHeight; 
+                    EditorGUIUtility.labelWidth = EditorGUIUtility.singleLineHeight;
                     pos.x += rect.width; rect.width = floatFieldWidth + hBigSpace; rect.position = pos;
                     EditorGUI.PropertyField(rect, elemProp.FindPropertyRelative(() => def.weight), new GUIContent(" "));
                     pos.x += rect.width; rect.position = pos;
                     EditorGUI.PropertyField(rect, elemProp.FindPropertyRelative(() => def.radius), new GUIContent(" "));
-                    EditorGUIUtility.labelWidth = oldWidth; 
+                    EditorGUIUtility.labelWidth = oldWidth;
                 };
 
             mTargetList.onAddCallback = (UnityEditorInternal.ReorderableList l) =>

@@ -32,11 +32,10 @@ namespace Cinemachine
             ConnectToVcam(true);
         }
 
-#if UNITY_EDITOR
-        /// <summary>Does nothing.  This is only here so we get the little "enabled"
-        /// checkbox in the inspector</summary>
-        void Update() {}
+        /// <summary>Does nothing.  For the little checkbox in the inspector.</summary>
+        protected virtual void OnEnable() {}
 
+#if UNITY_EDITOR
         [UnityEditor.Callbacks.DidReloadScripts]
         static void OnScriptReload()
         {
@@ -53,9 +52,11 @@ namespace Cinemachine
             ConnectToVcam(false);
         }
 
+        internal void EnsureStarted() { ConnectToVcam(true); }
+
         /// <summary>Connect to virtual camera.  Implementation must be safe to be called
         /// redundantly.  Override implementations must call this base implementation</summary>
-        /// <param name="connect">True if connectinf, false if disconnecting</param>
+        /// <param name="connect">True if connecting, false if disconnecting</param>
         protected virtual void ConnectToVcam(bool connect)
         {
             if (connect && VirtualCamera == null)
@@ -69,6 +70,12 @@ namespace Cinemachine
             }
             mExtraState = null;
         }
+
+        /// <summary>Override this to do such things as offset the RefereceLookAt.
+        /// Base class implementation does nothing.</summary>
+        /// <param name="curState">Input state that must be mutated</param>
+        public virtual void PrePipelineMutateCameraStateCallback(
+            CinemachineVirtualCameraBase vcam, ref CameraState curState, float deltaTime) {}
 
         /// <summary>Legacy support.  This is only here to avoid changing the API
         /// to make PostPipelineStageCallback() public</summary>
@@ -95,6 +102,13 @@ namespace Cinemachine
         /// <param name="positionDelta">The amount the target's position changed</param>
         public virtual void OnTargetObjectWarped(Transform target, Vector3 positionDelta) {}
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public virtual void ForceCameraPosition(Vector3 pos, Quaternion rot) {}
+        
         /// <summary>Notification that this virtual camera is going live.
         /// Base class implementation must be called by any overridden method.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
@@ -103,6 +117,13 @@ namespace Cinemachine
         /// <returns>True to request a vcam update of internal state</returns>
         public virtual bool OnTransitionFromCamera(
             ICinemachineCamera fromCam, Vector3 worldUp, float deltaTime) { return false; }
+
+        /// <summary>
+        /// Report maximum damping time needed for this extension.
+        /// Only used in editor for timeline scrubbing.
+        /// </summary>
+        /// <returns>Highest damping setting in this extension</returns>
+        public virtual float GetMaxDampTime() { return 0; }
 
         /// <summary>Because extensions can be placed on manager cams and will in that
         /// case be called for all the vcam children, vcam-specific state information

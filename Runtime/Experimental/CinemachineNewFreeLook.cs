@@ -236,6 +236,28 @@ namespace Cinemachine
             m_RadialAxis.HasRecentering = false;
         }
 
+        /// <summary>Updates the child rig cache</summary>
+        protected override void OnEnable()
+        {
+            base.OnEnable();
+            UpdateInputAxisProvider();
+        }
+        
+        /// <summary>
+        /// API for the inspector.  Internal use only
+        /// </summary>
+        public void UpdateInputAxisProvider()
+        {
+            m_VerticalAxis.SetInputAxisProvider(0, null);
+            m_RadialAxis.SetInputAxisProvider(1, null);
+            var provider = GetInputAxisProvider();
+            if (provider != null)
+            {
+                m_VerticalAxis.SetInputAxisProvider(1, provider);
+                m_RadialAxis.SetInputAxisProvider(2, provider);
+            }
+        }
+        
         void Reset()
         {
             DestroyComponents();
@@ -261,6 +283,18 @@ namespace Cinemachine
             m_SplineCurvature = 0.5f;
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation.  
+        /// Procedural placement then takes over
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            base.ForceCameraPosition(pos, rot);
+            m_VerticalAxis.Value = GetYAxisClosestValue(pos, State.ReferenceUp);
+        }
+        
         /// <summary>If we are transitioning from another FreeLook, grab the axis values from it.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
         /// <param name="worldUp">Default world Up, set by the CinemachineBrain</param>
@@ -345,8 +379,8 @@ namespace Cinemachine
         /// <param name="deltaTime">Delta time for time-based effects (ignore if less than 0)</param>
         override public void InternalUpdateCameraState(Vector3 worldUp, float deltaTime)
         {
-            if (!PreviousStateIsValid)
-                deltaTime = -1;
+            FollowTargetAttachment = 1;
+            LookAtTargetAttachment = 1;
 
             // Initialize the camera state, in case the game object got moved in the editor
             m_State = PullStateFromVirtualCamera(worldUp, ref m_Lens);
@@ -354,14 +388,16 @@ namespace Cinemachine
             m_Rigs[(int)RigID.Bottom].m_Lens.SnapshotCameraReadOnlyProperties(ref m_Lens);
 
             // Update our axes
-            bool activeCam = (deltaTime >= 0) || CinemachineCore.Instance.IsLive(this);
-            if (activeCam)
+            bool activeCam = PreviousStateIsValid || CinemachineCore.Instance.IsLive(this);
+            if (!activeCam || deltaTime < 0)
+                m_VerticalAxis.m_Recentering.DoRecentering(ref m_VerticalAxis, -1, 0.5f);
+            else
             {
                 if (m_VerticalAxis.Update(deltaTime))
                     m_VerticalAxis.m_Recentering.CancelRecentering();
                 m_RadialAxis.Update(deltaTime);
+                m_VerticalAxis.m_Recentering.DoRecentering(ref m_VerticalAxis, deltaTime, 0.5f);
             }
-            m_VerticalAxis.m_Recentering.DoRecentering(ref m_VerticalAxis, deltaTime, 0.5f);
 
             // Blend the components
             if (mBlender == null)

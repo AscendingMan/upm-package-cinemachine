@@ -58,7 +58,7 @@ namespace Cinemachine
 
         /// <summary>How to adjust the camera to get the desired framing</summary>
         [Tooltip("How to adjust the camera to get the desired framing.  You can zoom, dolly in/out, or do both.")]
-        public AdjustmentMode m_AdjustmentMode = AdjustmentMode.DollyThenZoom;
+        public AdjustmentMode m_AdjustmentMode = AdjustmentMode.ZoomOnly;
 
         /// <summary>How much closer to the target can the camera go?</summary>
         [Tooltip("The maximum distance toward the target that this behaviour is allowed to move the camera.")]
@@ -116,6 +116,15 @@ namespace Cinemachine
 
         /// <summary>For editor visualization of the calculated bounding box of the group</summary>
         public Matrix4x4 LastBoundsMatrix { get; private set; }
+
+        /// <summary>
+        /// Report maximum damping time needed for this component.
+        /// </summary>
+        /// <returns>Highest damping setting in this component</returns>
+        public override float GetMaxDampTime() 
+        { 
+            return Mathf.Max(base.GetMaxDampTime(), m_FrameDamping); 
+        }
 
         /// <summary>Applies the composer rules and orients the camera accordingly</summary>
         /// <param name="curState">The current camera state</param>
@@ -185,8 +194,9 @@ namespace Cinemachine
                 targetHeight = Mathf.Clamp(targetHeight / 2, m_MinimumOrthoSize, m_MaximumOrthoSize);
 
                 // ApplyDamping
-                if (deltaTime >= 0)
-                    targetHeight = m_prevFOV + Damper.Damp(targetHeight - m_prevFOV, m_FrameDamping, deltaTime);
+                if (deltaTime >= 0 && VirtualCamera.PreviousStateIsValid)
+                    targetHeight = m_prevFOV + VirtualCamera.DetachedLookAtTargetDamp(
+                        targetHeight - m_prevFOV, m_FrameDamping, deltaTime);
                 m_prevFOV = targetHeight;
 
                 LensSettings lens = curState.Lens;
@@ -217,10 +227,10 @@ namespace Cinemachine
                     targetDelta = Mathf.Clamp(targetDelta, -m_MaxDollyIn, m_MaxDollyOut);
 
                     // ApplyDamping
-                    if (deltaTime >= 0)
+                    if (deltaTime >= 0 && VirtualCamera.PreviousStateIsValid)
                     {
                         float delta = targetDelta - m_prevFramingDistance;
-                        delta = Damper.Damp(delta, m_FrameDamping, deltaTime);
+                        delta = VirtualCamera.DetachedLookAtTargetDamp(delta, m_FrameDamping, deltaTime);
                         targetDelta = m_prevFramingDistance + delta;
                     }
                     m_prevFramingDistance = targetDelta;
@@ -238,8 +248,9 @@ namespace Cinemachine
                     targetFOV = Mathf.Clamp(targetFOV, m_MinimumFOV, m_MaximumFOV);
 
                     // ApplyDamping
-                    if (deltaTime >= 0 && m_prevFOV != 0)
-                        targetFOV = m_prevFOV + Damper.Damp(targetFOV - m_prevFOV, m_FrameDamping, deltaTime);
+                    if (deltaTime >= 0 && m_prevFOV != 0 && VirtualCamera.PreviousStateIsValid)
+                        targetFOV = m_prevFOV + VirtualCamera.DetachedLookAtTargetDamp(
+                            targetFOV - m_prevFOV, m_FrameDamping, deltaTime);
                     m_prevFOV = targetFOV;
 
                     LensSettings lens = curState.Lens;
@@ -282,9 +293,9 @@ namespace Cinemachine
             newFwd = Quaternion.identity.ApplyCameraRotation(shift, Vector3.up) * Vector3.forward;
             newFwd = observer.MultiplyVector(newFwd);
 
-            float d = (zRange.y + zRange.x);
-            Vector2 angles = (maxAngles - shift) * Mathf.Deg2Rad;
-            angles = Vector2.Min(angles, new Vector2(89.5f, 89.5f));
+            float d = zRange.y + zRange.x;
+            Vector2 angles = (maxAngles - shift);
+            angles = Vector2.Min(angles, new Vector2(89.5f, 89.5f)) * Mathf.Deg2Rad;
             return new Bounds(
                 new Vector3(0, 0, d/2),
                 new Vector3(Mathf.Tan(angles.y) * d, Mathf.Tan(angles.x) * d, zRange.y - zRange.x));

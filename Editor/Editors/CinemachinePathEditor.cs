@@ -3,6 +3,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using UnityEditorInternal;
 using Cinemachine.Utility;
+using System.Linq;
 
 namespace Cinemachine.Editor
 {
@@ -23,17 +24,34 @@ namespace Cinemachine.Editor
         static bool mWaypointsExpanded;
         bool mPreferTangentSelection;
 
-        protected override List<string> GetExcludedPropertiesInInspector()
+        protected override void GetExcludedPropertiesInInspector(List<string> excluded)
         {
-            List<string> excluded = base.GetExcludedPropertiesInInspector();
+            base.GetExcludedPropertiesInInspector(excluded);
             excluded.Add(FieldPath(x => x.m_Waypoints));
-            return excluded;
         }
 
         void OnEnable()
         {
             mWaypointList = null;
             mPreferTangentSelection = PreferTangentSelection;
+        }
+
+        // ReSharper disable once UnusedMember.Global - magic method called when doing Frame Selected
+        public bool HasFrameBounds()
+        {
+            return Target.m_Waypoints != null && Target.m_Waypoints.Length > 0;
+        }
+
+        // ReSharper disable once UnusedMember.Global - magic method called when doing Frame Selected
+        public Bounds OnGetFrameBounds()
+        {
+            Vector3[] wp;
+            int selected = mWaypointList == null ? -1 : mWaypointList.index;
+            if (selected >= 0 && selected < Target.m_Waypoints.Length)
+                wp = new Vector3[1] { Target.m_Waypoints[selected].position };
+            else
+                wp = Target.m_Waypoints.Select(p => p.position).ToArray();
+            return GeometryUtility.CalculateBounds(wp, Target.transform.localToWorldMatrix);
         }
 
         public override void OnInspectorGUI()
@@ -300,7 +318,7 @@ namespace Cinemachine.Editor
                     && mWaypointList.index != i)
                 {
                     mWaypointList.index = i;
-                    InspectorUtility.RepaintGameView(Target);
+                    InspectorUtility.RepaintGameView();
                 }
                 // Label it
                 Handles.BeginGUI();
@@ -340,7 +358,7 @@ namespace Cinemachine.Editor
                 wp.tangent = newPos - wp.position;
                 Target.m_Waypoints[i] = wp;
                 Target.InvalidateDistanceCache();
-                InspectorUtility.RepaintGameView(Target);
+                InspectorUtility.RepaintGameView();
             }
         }
 
@@ -361,7 +379,7 @@ namespace Cinemachine.Editor
                 wp.position = Matrix4x4.Inverse(localToWorld).MultiplyPoint(pos);;
                 Target.m_Waypoints[i] = wp;
                 Target.InvalidateDistanceCache();
-                InspectorUtility.RepaintGameView(Target);
+                InspectorUtility.RepaintGameView();
             }
         }
 

@@ -74,6 +74,18 @@ namespace Cinemachine
 
         private void OnValidate() { InvalidateDistanceCache(); }
 
+        private void Reset()
+        {
+            m_Looped = false;
+            m_Waypoints = new Waypoint[2]
+            {
+                new Waypoint { position = new Vector3(0, 0, -5) },
+                new Waypoint { position = new Vector3(0, 0, 5) }
+            };
+            m_Appearance = new Appearance();
+            InvalidateDistanceCache();
+        }
+
         /// <summary>Call this if the path changes in such a way as to affect distances
         /// or other cached path elements</summary>
         public override void InvalidateDistanceCache()

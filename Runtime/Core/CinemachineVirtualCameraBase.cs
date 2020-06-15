@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Cinemachine.Utility;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -56,6 +57,24 @@ namespace Cinemachine
         public int m_Priority = 10;
 
         /// <summary>
+        /// This must be set every frame at the start of the pipeline to relax the virtual camera's
+        /// attachment to the target.  Range is 0...1.  
+        /// 1 is full attachment, and is the normal state.
+        /// 0 is no attachment, and virtual camera will behave as if no Follow 
+        /// targets are set.
+        /// </summary>
+        public float FollowTargetAttachment { get; set; }
+
+        /// <summary>
+        /// This must be set every frame at the start of the pipeline to relax the virtual camera's
+        /// attachment to the target.  Range is 0...1.  
+        /// 1 is full attachment, and is the normal state.
+        /// 0 is no attachment, and virtual camera will behave as if no LookAt
+        /// targets are set.
+        /// </summary>
+        public float LookAtTargetAttachment { get; set; }
+
+        /// <summary>
         /// How often to update a virtual camera when it is in Standby mode
         /// </summary>
         public enum StandbyUpdateMode
@@ -77,6 +96,123 @@ namespace Cinemachine
             + "Set this to tune for performance. Most of the time Never is fine, "
             + "unless the virtual camera is doing shot evaluation.")]
         public StandbyUpdateMode m_StandbyUpdate = StandbyUpdateMode.RoundRobin;
+
+        /// <summary>
+        /// Query components and extensions for the maximum damping time.
+        /// Base class implementation queries extensions.
+        /// Only used in editor for timeline scrubbing.
+        /// </summary>
+        /// <returns>Highest damping setting in this vcam</returns>
+        public virtual float GetMaxDampTime()
+        {
+            float maxDamp = 0;
+            if (mExtensions != null)
+                for (int i = 0; i < mExtensions.Count; ++i)
+                    maxDamp = Mathf.Max(maxDamp, mExtensions[i].GetMaxDampTime());
+            return maxDamp;
+        }
+
+        /// <summary>Get a damped version of a quantity.  This is the portion of the
+        /// quantity that will take effect over the given time.
+        /// This method takes the target attachment into account.  For general
+        /// damping without consideration of target attachment, use Damper.Damp()</summary>
+        /// <param name="initial">The amount that will be damped</param>
+        /// <param name="dampTime">The rate of damping.  This is the time it would
+        /// take to reduce the original amount to a negligible percentage</param>
+        /// <param name="deltaTime">The time over which to damp</param>
+        /// <returns>The damped amount.  This will be the original amount scaled by
+        /// a value between 0 and 1.</returns>
+        public float DetachedFollowTargetDamp(float initial, float dampTime, float deltaTime)
+        {
+            dampTime = Mathf.Lerp(Mathf.Max(1, dampTime), dampTime, FollowTargetAttachment);
+            deltaTime = Mathf.Lerp(0, deltaTime, FollowTargetAttachment);
+            return Damper.Damp(initial, dampTime, deltaTime);
+        }
+
+        /// <summary>Get a damped version of a quantity.  This is the portion of the
+        /// quantity that will take effect over the given time.
+        /// This method takes the target attachment into account.  For general
+        /// damping without consideration of target attachment, use Damper.Damp()</summary>
+        /// <param name="initial">The amount that will be damped</param>
+        /// <param name="dampTime">The rate of damping.  This is the time it would
+        /// take to reduce the original amount to a negligible percentage</param>
+        /// <param name="deltaTime">The time over which to damp</param>
+        /// <returns>The damped amount.  This will be the original amount scaled by
+        /// a value between 0 and 1.</returns>
+        public Vector3 DetachedFollowTargetDamp(Vector3 initial, Vector3 dampTime, float deltaTime)
+        {
+            dampTime = Vector3.Lerp(Vector3.Max(Vector3.one, dampTime), dampTime, FollowTargetAttachment);
+            deltaTime = Mathf.Lerp(0, deltaTime, FollowTargetAttachment);
+            return Damper.Damp(initial, dampTime, deltaTime);
+        }
+
+        /// <summary>Get a damped version of a quantity.  This is the portion of the
+        /// quantity that will take effect over the given time.
+        /// This method takes the target attachment into account.  For general
+        /// damping without consideration of target attachment, use Damper.Damp()</summary>
+        /// <param name="initial">The amount that will be damped</param>
+        /// <param name="dampTime">The rate of damping.  This is the time it would
+        /// take to reduce the original amount to a negligible percentage</param>
+        /// <param name="deltaTime">The time over which to damp</param>
+        /// <returns>The damped amount.  This will be the original amount scaled by
+        /// a value between 0 and 1.</returns>
+        public Vector3 DetachedFollowTargetDamp(Vector3 initial, float dampTime, float deltaTime)
+        {
+            dampTime = Mathf.Lerp(Mathf.Max(1, dampTime), dampTime, FollowTargetAttachment);
+            deltaTime = Mathf.Lerp(0, deltaTime, FollowTargetAttachment);
+            return Damper.Damp(initial, dampTime, deltaTime);
+        }
+
+        /// <summary>Get a damped version of a quantity.  This is the portion of the
+        /// quantity that will take effect over the given time.
+        /// This method takes the target attachment into account.  For general
+        /// damping without consideration of target attachment, use Damper.Damp()</summary>
+        /// <param name="initial">The amount that will be damped</param>
+        /// <param name="dampTime">The rate of damping.  This is the time it would
+        /// take to reduce the original amount to a negligible percentage</param>
+        /// <param name="deltaTime">The time over which to damp</param>
+        /// <returns>The damped amount.  This will be the original amount scaled by
+        /// a value between 0 and 1.</returns>
+        public float DetachedLookAtTargetDamp(float initial, float dampTime, float deltaTime)
+        {
+            dampTime = Mathf.Lerp(Mathf.Max(1, dampTime), dampTime, LookAtTargetAttachment);
+            deltaTime = Mathf.Lerp(0, deltaTime, LookAtTargetAttachment);
+            return Damper.Damp(initial, dampTime, deltaTime);
+        }
+
+        /// <summary>Get a damped version of a quantity.  This is the portion of the
+        /// quantity that will take effect over the given time.
+        /// This method takes the target attachment into account.  For general
+        /// damping without consideration of target attachment, use Damper.Damp()</summary>
+        /// <param name="initial">The amount that will be damped</param>
+        /// <param name="dampTime">The rate of damping.  This is the time it would
+        /// take to reduce the original amount to a negligible percentage</param>
+        /// <param name="deltaTime">The time over which to damp</param>
+        /// <returns>The damped amount.  This will be the original amount scaled by
+        /// a value between 0 and 1.</returns>
+        public Vector3 DetachedLookAtTargetDamp(Vector3 initial, Vector3 dampTime, float deltaTime)
+        {
+            dampTime = Vector3.Lerp(Vector3.Max(Vector3.one, dampTime), dampTime, LookAtTargetAttachment);
+            deltaTime = Mathf.Lerp(0, deltaTime, LookAtTargetAttachment);
+            return Damper.Damp(initial, dampTime, deltaTime);
+        }
+
+        /// <summary>Get a damped version of a quantity.  This is the portion of the
+        /// quantity that will take effect over the given time.
+        /// This method takes the target attachment into account.  For general
+        /// damping without consideration of target attachment, use Damper.Damp()</summary>
+        /// <param name="initial">The amount that will be damped</param>
+        /// <param name="dampTime">The rate of damping.  This is the time it would
+        /// take to reduce the original amount to a negligible percentage</param>
+        /// <param name="deltaTime">The time over which to damp</param>
+        /// <returns>The damped amount.  This will be the original amount scaled by
+        /// a value between 0 and 1.</returns>
+        public Vector3 DetachedLookAtTargetDamp(Vector3 initial, float dampTime, float deltaTime)
+        {
+            dampTime = Mathf.Lerp(Mathf.Max(1, dampTime), dampTime, LookAtTargetAttachment);
+            deltaTime = Mathf.Lerp(0, deltaTime, LookAtTargetAttachment);
+            return Damper.Damp(initial, dampTime, deltaTime);
+        }
 
         /// <summary>
         /// A delegate to hook into the state calculation pipeline.
@@ -101,7 +237,7 @@ namespace Cinemachine
                 mExtensions.Remove(extension);
         }
 
-        /// <summary> THe extensions connected to this vcam</summary>
+        /// <summary> Tee extensions connected to this vcam</summary>
         List<CinemachineExtension> mExtensions;
 
         /// <summary>
@@ -133,6 +269,36 @@ namespace Cinemachine
             CinemachineVirtualCameraBase parent = ParentCamera as CinemachineVirtualCameraBase;
             if (parent != null)
                 parent.InvokePostPipelineStageCallback(vcam, stage, ref newState, deltaTime);
+        }
+        
+        /// <summary>
+        /// Invokes the PrePipelineMutateCameraStateCallback for this camera, 
+        /// and up the hierarchy for all parent cameras (if any).
+        /// Implementaion must be sure to call this after each pipeline stage, to allow
+        /// other services to hook into the pipeline.
+        /// See CinemachineCore.Stage.
+        /// </summary>
+        protected void InvokePrePipelineMutateCameraStateCallback(
+            CinemachineVirtualCameraBase vcam, ref CameraState newState, float deltaTime)
+        {
+            if (mExtensions != null)
+            {
+                for (int i = 0; i < mExtensions.Count; ++i)
+                {
+                    var e = mExtensions[i];
+                    if (e == null)
+                    {
+                        // Object was deleted (possibly because of Undo in the editor)
+                        mExtensions.RemoveAt(i);
+                        --i;
+                    }
+                    else if (e.enabled)
+                        e.PrePipelineMutateCameraStateCallback(vcam, ref newState, deltaTime);
+                }
+            }
+            CinemachineVirtualCameraBase parent = ParentCamera as CinemachineVirtualCameraBase;
+            if (parent != null)
+                parent.InvokePrePipelineMutateCameraStateCallback(vcam, ref newState, deltaTime);
         }
 
         /// <summary>
@@ -249,30 +415,7 @@ namespace Cinemachine
         public abstract Transform Follow { get; set; }
 
         /// <summary>Set this to force the next update to ignore deltaTime and reset itself</summary>
-        public bool PreviousStateIsValid
-        {
-            get
-            {
-                if (LookAt != m_previousLookAtTarget)
-                {
-                    m_previousLookAtTarget = LookAt;
-                    m_previousStateIsValid = false;
-                }
-                if (Follow != m_previousFollowTarget)
-                {
-                    m_previousFollowTarget = Follow;
-                    m_previousStateIsValid = false;
-                }
-                return m_previousStateIsValid;
-            }
-            set
-            {
-                m_previousStateIsValid = value;
-            }
-        }
-        private bool m_previousStateIsValid;
-        private Transform m_previousLookAtTarget;
-        private Transform m_previousFollowTarget;
+        public virtual bool PreviousStateIsValid { get; set; }
 
         /// <summary>
         /// Update the camera's state.
@@ -329,21 +472,55 @@ namespace Cinemachine
         /// <summary>Maintains the global vcam registry.  Always call the base class implementation.</summary>
         protected virtual void OnDestroy()
         {
-            CinemachineCore.Instance.RemoveActiveCamera(this);
+            CinemachineCore.Instance.CameraDestroyed(this);
         }
 
         /// <summary>Base class implementation makes sure the priority queue remains up-to-date.</summary>
         protected virtual void OnTransformParentChanged()
         {
-            CinemachineCore.Instance.CameraDestroyed(this);
-            CinemachineCore.Instance.CameraAwakened(this);
+            CinemachineCore.Instance.CameraDisabled(this);
+            CinemachineCore.Instance.CameraEnabled(this);
             UpdateSlaveStatus();
             UpdateVcamPoolStatus();
         }
 
-        /// <summary>Base class implementation does nothing.</summary>
+        bool m_WasStarted;
+
+        /// <summary>Derived classes should call base class implementation.</summary>
         protected virtual void Start()
         {
+            m_WasStarted = true;
+        }
+
+        /// <summary>
+        /// Called on inactive object when being artificially activated by timeline.
+        /// This is necessary because Awake() isn't called on inactive gameObjects.
+        /// </summary>
+        internal void EnsureStarted()
+        {
+            if (!m_WasStarted)
+            {
+                m_WasStarted = true;
+                var extensions = GetComponentsInChildren<CinemachineExtension>();
+                for (int i = 0; i < extensions.Length; ++i)
+                    extensions[i].EnsureStarted();
+            }
+        }
+
+        /// <summary>
+        /// Locate the first component that implements AxisState.IInputAxisProvider.
+        /// </summary>
+        /// <returns>The first AxisState.IInputAxisProvider or null if none</returns>
+        public AxisState.IInputAxisProvider GetInputAxisProvider()
+        {
+            var components = GetComponentsInChildren<MonoBehaviour>();
+            for (int i = 0; i < components.Length; ++i)
+            {
+                var provider = components[i] as AxisState.IInputAxisProvider;
+                if (provider != null)
+                    return provider;
+            }
+            return null;
         }
 
         /// <summary>Enforce bounds for fields, when changed in inspector.
@@ -359,6 +536,11 @@ namespace Cinemachine
         /// <summary>Base class implementation adds the virtual camera from the priority queue.</summary>
         protected virtual void OnEnable()
         {
+            UpdateSlaveStatus();
+            UpdateVcamPoolStatus();    // Add to queue
+            if (!CinemachineCore.Instance.IsLive(this))
+                PreviousStateIsValid = false;
+            CinemachineCore.Instance.CameraEnabled(this);
             // Sanity check - if another vcam component is enabled, shut down
             var vcamComponents = GetComponents<CinemachineVirtualCameraBase>();
             for (int i = 0; i < vcamComponents.Length; ++i)
@@ -371,18 +553,13 @@ namespace Cinemachine
                     enabled = false;
                 }
             }
-            UpdateSlaveStatus();
-            UpdateVcamPoolStatus();    // Add to queue
-            if (!CinemachineCore.Instance.IsLive(this))
-                PreviousStateIsValid = false;
-            CinemachineCore.Instance.CameraAwakened(this);
         }
 
         /// <summary>Base class implementation makes sure the priority queue remains up-to-date.</summary>
         protected virtual void OnDisable()
         {
             UpdateVcamPoolStatus();    // Remove from queue
-            CinemachineCore.Instance.CameraDestroyed(this);
+            CinemachineCore.Instance.CameraDisabled(this);
         }
 
         /// <summary>Base class implementation makes sure the priority queue remains up-to-date.</summary>
@@ -401,7 +578,13 @@ namespace Cinemachine
             m_parentVcam = null;
             Transform p = transform.parent;
             if (p != null)
+            {
+#if UNITY_2019_2_OR_NEWER
+                p.TryGetComponent(out m_parentVcam);
+#else
                 m_parentVcam = p.GetComponent<CinemachineVirtualCameraBase>();
+#endif
+            }
         }
 
         /// <summary>Returns this vcam's LookAt target, or if that is null, will retrun
@@ -465,6 +648,21 @@ namespace Cinemachine
             }
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public virtual void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            // inform the extensions
+            if (mExtensions != null)
+            {
+                for (int i = 0; i < mExtensions.Count; ++i)
+                    mExtensions[i].ForceCameraPosition(pos, rot);
+            }
+        }
+        
         /// <summary>Create a blend between 2 virtual cameras, taking into account
         /// any existing active blend.</summary>
         protected CinemachineBlend CreateBlend(
@@ -501,8 +699,8 @@ namespace Cinemachine
         protected CameraState PullStateFromVirtualCamera(Vector3 worldUp, ref LensSettings lens)
         {
             CameraState state = CameraState.Default;
-            state.RawPosition = transform.position;
-            state.RawOrientation = transform.rotation;
+            state.RawPosition = TargetPositionCache.GetTargetPosition(transform);
+            state.RawOrientation = TargetPositionCache.GetTargetRotation(transform);
             state.ReferenceUp = worldUp;
 
             CinemachineBrain brain = CinemachineCore.Instance.FindPotentialTargetBrain(this);

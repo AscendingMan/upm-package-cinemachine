@@ -163,22 +163,37 @@ namespace Cinemachine.Editor
 #endif
         }
 
-        public static void RepaintGameView(UnityEngine.Object dirtyObject = null)
+        public static void RepaintGameView(UnityEngine.Object unused = null)
         {
-#if UNITY_2019_1_OR_NEWER
-            if (dirtyObject != null)
-                EditorUtility.SetDirty(dirtyObject);
-
-            System.Reflection.Assembly assembly = typeof(UnityEditor.EditorWindow).Assembly;
-            Type type = assembly.GetType("UnityEditor.GameView");
-            EditorWindow gameview = EditorWindow.GetWindow(type);
-            if (gameview != null)
-                gameview.Repaint();
-            else
-                UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
-#else
+            EditorApplication.QueuePlayerLoopUpdate();
             UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
-#endif
+        }
+
+        /// <summary>
+        /// Try to get the name of the owning virtual camera oibject.  If none then use
+        /// the object's name
+        /// </summary>
+        /// <param name="property"></param>
+        /// <returns></returns>
+        internal static string GetVirtualCameraObjectName(SerializedProperty property)
+        {
+            // A little hacky here, as we favour virtual cameras...
+            var obj = property.serializedObject.targetObject;
+            GameObject go = obj as GameObject;
+            if (go == null)
+            {
+                var component = obj as Component;
+                if (component != null)
+                    go = component.gameObject;
+            }
+            if (go != null)
+            {
+                var vcam = go.GetComponentInParent<CinemachineVirtualCameraBase>();
+                if (vcam != null)
+                    return vcam.Name;
+                return go.name;
+            }
+            return obj.name;
         }
     }
 }

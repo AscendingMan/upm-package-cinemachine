@@ -196,23 +196,27 @@ namespace Cinemachine.Editor
             InternalCreateVirtualCamera("CM vcam", true, typeof(CinemachineFramingTransposer));
         }
 
-        [MenuItem("Cinemachine/Import Example Asset Package")]
-        private static void ImportExamplePackage()
-        {
-            string pkgFile = ScriptableObjectUtility.CinemachineInstallPath
-                + "/Samples/CinemachineExamples.unitypackage";
-            if (!File.Exists(pkgFile))
-                Debug.LogError("Missing file " + pkgFile);
-            else
-                AssetDatabase.ImportPackage(pkgFile, true);
-        }
-
 #if !UNITY_2019_1_OR_NEWER
         [MenuItem("Cinemachine/Import Post Processing V2 Adapter Asset Package")]
         private static void ImportPostProcessingV2Package()
         {
+            var message = "In Cinemachine 2.4.0 and up, the PostProcessing adapter is built-in, and "
+                + "can be auto-enabled by Unity 2019 and up.\n\n"
+                + "Unity 2018.4 is unable to auto-detect the presence of PostProcessing, so you must "
+                + "manually add a define to your player settings to enable the code.\n\n"
+                + "To enable support for PostProcessing v2, please do the following:\n\n"
+                + "1. Delete the CinemachinePostProcessing folder from your assets, if it's present\n\n"
+                + "2. Open the Player Settings tab in Project Settings\n\n"
+                + "3. Add this define: CINEMACHINE_POST_PROCESSING_V2";
+
+            EditorUtility.DisplayDialog("Cinemachine Adapter Code for PostProcessing V2", message, "OK");
+        }
+
+        [MenuItem("Cinemachine/Import CinemachineExamples Asset Package")]
+        private static void ImportExamplePackage()
+        {
             string pkgFile = ScriptableObjectUtility.CinemachineInstallPath
-                + "/Extras~/CinemachinePostProcessingV2.unitypackage";
+                + "/Extras~/CinemachineExamples.unitypackage";
             if (!File.Exists(pkgFile))
                 Debug.LogError("Missing file " + pkgFile);
             else
@@ -230,6 +234,14 @@ namespace Cinemachine.Editor
         }
 
         /// <summary>
+        /// Create a static Virtual Camera, with no procedural components
+        /// </summary>
+        public static CinemachineVirtualCamera CreateStaticVirtualCamera()
+        {
+            return InternalCreateVirtualCamera("CM vcam", false);
+        }
+
+        /// <summary>
         /// Create a Virtual Camera, with components
         /// </summary>
         static CinemachineVirtualCamera InternalCreateVirtualCamera(
@@ -240,10 +252,9 @@ namespace Cinemachine.Editor
             GameObject go = InspectorUtility.CreateGameObject(
                     GenerateUniqueObjectName(typeof(CinemachineVirtualCamera), name),
                     typeof(CinemachineVirtualCamera));
-            if (SceneView.lastActiveSceneView != null)
-                go.transform.position = SceneView.lastActiveSceneView.pivot;
-            Undo.RegisterCreatedObjectUndo(go, "create " + name);
             CinemachineVirtualCamera vcam = go.GetComponent<CinemachineVirtualCamera>();
+            SetVcamFromSceneView(vcam);
+            Undo.RegisterCreatedObjectUndo(go, "create " + name);
             GameObject componentOwner = vcam.GetComponentOwner().gameObject;
             foreach (Type t in components)
                 Undo.AddComponent(componentOwner, t);
@@ -253,6 +264,20 @@ namespace Cinemachine.Editor
             if (selectIt)
                 Selection.activeObject = go;
             return vcam;
+        }
+
+        public static void SetVcamFromSceneView(CinemachineVirtualCamera vcam)
+        {
+            if (SceneView.lastActiveSceneView != null)
+            {
+                vcam.transform.position = SceneView.lastActiveSceneView.camera.transform.position;
+                vcam.transform.rotation = SceneView.lastActiveSceneView.camera.transform.rotation;
+                var lens = LensSettings.FromCamera(SceneView.lastActiveSceneView.camera);
+                // Don't grab these
+                lens.NearClipPlane = LensSettings.Default.NearClipPlane;
+                lens.FarClipPlane = LensSettings.Default.FarClipPlane;
+                vcam.m_Lens = lens;
+            }
         }
 
         /// <summary>

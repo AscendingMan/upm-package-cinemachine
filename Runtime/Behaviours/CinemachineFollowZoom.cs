@@ -52,13 +52,22 @@ namespace Cinemachine
             public float m_previousFrameZoom = 0;
         }
 
+        /// <summary>
+        /// Report maximum damping time needed for this component.
+        /// </summary>
+        /// <returns>Highest damping setting in this component</returns>
+        public override float GetMaxDampTime() 
+        { 
+            return m_Damping;
+        }
+        
         /// <summary>Callback to preform the zoom adjustment</summary>
         protected override void PostPipelineStageCallback(
             CinemachineVirtualCameraBase vcam,
             CinemachineCore.Stage stage, ref CameraState state, float deltaTime)
         {
             VcamExtraState extra = GetExtraState<VcamExtraState>(vcam);
-            if (deltaTime < 0)
+            if (deltaTime < 0 || !VirtualCamera.PreviousStateIsValid)
                 extra.m_previousFrameZoom = state.Lens.FieldOfView;
 
             // Set the zoom after the body has been positioned, but before the aim,
@@ -77,11 +86,11 @@ namespace Cinemachine
                     targetWidth = Mathf.Clamp(targetWidth, minW, maxW);
 
                     // Apply damping
-                    if (deltaTime >= 0 && m_Damping > 0)
+                    if (deltaTime >= 0 && m_Damping > 0 && VirtualCamera.PreviousStateIsValid)
                     {
                         float currentWidth = d * 2f * Mathf.Tan(extra.m_previousFrameZoom * Mathf.Deg2Rad / 2f);
                         float delta = targetWidth - currentWidth;
-                        delta = Damper.Damp(delta, m_Damping, deltaTime);
+                        delta = VirtualCamera.DetachedLookAtTargetDamp(delta, m_Damping, deltaTime);
                         targetWidth = currentWidth + delta;
                     }
                     fov = 2f * Mathf.Atan(targetWidth / (2 * d)) * Mathf.Rad2Deg;

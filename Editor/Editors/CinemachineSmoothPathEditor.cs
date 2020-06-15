@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using System.Linq;
 using System.Collections.Generic;
 using UnityEditorInternal;
 
@@ -10,16 +11,34 @@ namespace Cinemachine.Editor
     {
         private ReorderableList mWaypointList;
 
-        protected override List<string> GetExcludedPropertiesInInspector()
+        protected override void GetExcludedPropertiesInInspector(List<string> excluded)
         {
-            List<string> excluded = base.GetExcludedPropertiesInInspector();
+            base.GetExcludedPropertiesInInspector(excluded);
             excluded.Add(FieldPath(x => x.m_Waypoints));
-            return excluded;
         }
 
         void OnEnable()
         {
             mWaypointList = null;
+        }
+
+
+        // ReSharper disable once UnusedMember.Global - magic method called when doing Frame Selected
+        public bool HasFrameBounds()
+        {
+            return Target.m_Waypoints != null && Target.m_Waypoints.Length > 0;
+        }
+
+        // ReSharper disable once UnusedMember.Global - magic method called when doing Frame Selected
+        public Bounds OnGetFrameBounds()
+        {
+            Vector3[] wp;
+            int selected = mWaypointList == null ? -1 : mWaypointList.index;
+            if (selected >= 0 && selected < Target.m_Waypoints.Length)
+                wp = new Vector3[1] { Target.m_Waypoints[selected].position };
+            else
+                wp = Target.m_Waypoints.Select(p => p.position).ToArray();
+            return GeometryUtility.CalculateBounds(wp, Target.transform.localToWorldMatrix);
         }
 
         public override void OnInspectorGUI()
@@ -92,8 +111,12 @@ namespace Cinemachine.Editor
             r.x += r.width + hSpace; r.width = rollWidth;
             float oldWidth = EditorGUIUtility.labelWidth;
             EditorGUIUtility.labelWidth = labelDimension.x;
+
+            var indent = EditorGUI.indentLevel;
+            EditorGUI.indentLevel = 0;
             EditorGUI.PropertyField(r, element.FindPropertyRelative(() => def.roll), rollLabel);
             EditorGUIUtility.labelWidth = oldWidth;
+            EditorGUI.indentLevel = indent;
 
             r.x += r.width + hSpace; r.height += 1; r.width = r.height;
             GUIContent setButtonContent = EditorGUIUtility.IconContent("d_RectTransform Icon");
@@ -145,7 +168,7 @@ namespace Cinemachine.Editor
             list.Insert(indexA + 1, wp);
             Target.m_Waypoints = list.ToArray();
             Target.InvalidateDistanceCache();
-            InspectorUtility.RepaintGameView(Target);
+            InspectorUtility.RepaintGameView();
             mWaypointList.index = indexA + 1; // select it
         }
 
@@ -179,7 +202,7 @@ namespace Cinemachine.Editor
                     && mWaypointList.index != i)
                 {
                     mWaypointList.index = i;
-                    InspectorUtility.RepaintGameView(Target);
+                    InspectorUtility.RepaintGameView();
                 }
                 // Label it
                 Handles.BeginGUI();
@@ -215,7 +238,7 @@ namespace Cinemachine.Editor
                 wp.position = Matrix4x4.Inverse(localToWorld).MultiplyPoint(pos);
                 Target.m_Waypoints[i] = wp;
                 Target.InvalidateDistanceCache();
-                InspectorUtility.RepaintGameView(Target);
+                InspectorUtility.RepaintGameView();
             }
         }
 

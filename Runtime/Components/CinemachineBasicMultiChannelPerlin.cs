@@ -64,20 +64,23 @@ namespace Cinemachine
             if (!mInitialized)
                 Initialize();
 
-            mNoiseTime += deltaTime * m_FrequencyGain;
+            if (TargetPositionCache.CacheMode == TargetPositionCache.Mode.Playback
+                    && TargetPositionCache.HasHurrentTime)
+                mNoiseTime = TargetPositionCache.CurrentTime * m_FrequencyGain;
+            else
+                mNoiseTime += deltaTime * m_FrequencyGain;
             curState.PositionCorrection += curState.CorrectedOrientation * NoiseSettings.GetCombinedFilterResults(
                     m_NoiseProfile.PositionNoise, mNoiseTime, mNoiseOffsets) * m_AmplitudeGain;
             Quaternion rotNoise = Quaternion.Euler(NoiseSettings.GetCombinedFilterResults(
                     m_NoiseProfile.OrientationNoise, mNoiseTime, mNoiseOffsets) * m_AmplitudeGain);
-            curState.OrientationCorrection = curState.OrientationCorrection * rotNoise;
-
             if (m_PivotOffset != Vector3.zero)
             {
                 Matrix4x4 m = Matrix4x4.Translate(-m_PivotOffset);
-                m = Matrix4x4.Rotate(curState.CorrectedOrientation) * m;
+                m = Matrix4x4.Rotate(rotNoise) * m;
                 m = Matrix4x4.Translate(m_PivotOffset) * m;
-                curState.PositionCorrection += m.MultiplyPoint(Vector3.zero);
+                curState.PositionCorrection += curState.CorrectedOrientation * m.MultiplyPoint(Vector3.zero);
             }
+            curState.OrientationCorrection = curState.OrientationCorrection * rotNoise;
         }
 
         private bool mInitialized = false;

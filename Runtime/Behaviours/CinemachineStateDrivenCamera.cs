@@ -24,17 +24,20 @@ namespace Cinemachine
 #else
     [ExecuteInEditMode]
 #endif
+    [ExcludeFromPreset]
     [AddComponentMenu("Cinemachine/CinemachineStateDrivenCamera")]
     public class CinemachineStateDrivenCamera : CinemachineVirtualCameraBase
     {
         /// <summary>Default object for the camera children to look at (the aim target), if not specified in a child rig.  May be empty</summary>
         [Tooltip("Default object for the camera children to look at (the aim target), if not specified in a child camera.  May be empty if all of the children define targets of their own.")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_LookAt = null;
 
         /// <summary>Default object for the camera children wants to move with (the body target), if not specified in a child rig.  May be empty</summary>
         [Tooltip("Default object for the camera children wants to move with (the body target), if not specified in a child camera.  May be empty if all of the children define targets of their own.")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_Follow = null;
 
         /// <summary>The state machine whose state changes will drive this camera's choice of active child</summary>
@@ -65,8 +68,8 @@ namespace Cinemachine
             /// <summary>The full hash of the animation state</summary>
             [Tooltip("The full hash of the animation state")]
             public int m_FullHash;
-            /// <summary>The virtual camera to activate whrn the animation state becomes active</summary>
-            [Tooltip("The virtual camera to activate whrn the animation state becomes active")]
+            /// <summary>The virtual camera to activate when the animation state becomes active</summary>
+            [Tooltip("The virtual camera to activate when the animation state becomes active")]
             public CinemachineVirtualCameraBase m_VirtualCamera;
             /// <summary>How long to wait (in seconds) before activating the virtual camera.
             /// This filters out very short state durations</summary>
@@ -137,7 +140,7 @@ namespace Cinemachine
 
         /// <summary>Check whether the vcam a live child of this camera.</summary>
         /// <param name="vcam">The Virtual Camera to check</param>
-        /// <param name="dominantChildOnly">If truw, will only return true if this vcam is the dominat live child</param>
+        /// <param name="dominantChildOnly">If true, will only return true if this vcam is the dominat live child</param>
         /// <returns>True if the vcam is currently actively influencing the state of this vcam</returns>
         public override bool IsLiveChild(ICinemachineCamera vcam, bool dominantChildOnly = false)
         {
@@ -165,7 +168,7 @@ namespace Cinemachine
 
         /// <summary>This is called to notify the vcam that a target got warped,
         /// so that the vcam can update its internal state to make the camera
-        /// also warp seamlessy.</summary>
+        /// also warp seamlessly.</summary>
         /// <param name="target">The object that was warped</param>
         /// <param name="positionDelta">The amount the target's position changed</param>
         public override void OnTargetObjectWarped(Transform target, Vector3 positionDelta)
@@ -176,6 +179,19 @@ namespace Cinemachine
             base.OnTargetObjectWarped(target, positionDelta);
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            UpdateListOfChildren();
+            foreach (var vcam in m_ChildCameras)
+                vcam.ForceCameraPosition(pos, rot);
+            base.ForceCameraPosition(pos, rot);
+        }
+        
         /// <summary>Notification that this virtual camera is going live.</summary>
         /// <param name="fromCam">The camera being deactivated.  May be null.</param>
         /// <param name="worldUp">Default world Up, set by the CinemachineBrain</param>
@@ -199,11 +215,8 @@ namespace Cinemachine
         /// <param name="deltaTime">Delta time for time-based effects (ignore if less than or equal to 0)</param>
         public override void InternalUpdateCameraState(Vector3 worldUp, float deltaTime)
         {
-            if (!PreviousStateIsValid)
-                deltaTime = -1;
-
             UpdateListOfChildren();
-            CinemachineVirtualCameraBase best = ChooseCurrentCamera(deltaTime);
+            CinemachineVirtualCameraBase best = ChooseCurrentCamera();
             if (best != null && !best.gameObject.activeInHierarchy)
             {
                 best.gameObject.SetActive(true);
@@ -387,7 +400,7 @@ namespace Cinemachine
         }
 
         List<AnimatorClipInfo>  m_clipInfoList = new List<AnimatorClipInfo>();
-        private CinemachineVirtualCameraBase ChooseCurrentCamera(float deltaTime)
+        private CinemachineVirtualCameraBase ChooseCurrentCamera()
         {
             if (m_ChildCameras == null || m_ChildCameras.Length == 0)
             {
@@ -408,7 +421,7 @@ namespace Cinemachine
             int hash;
             if (m_AnimatedTarget.IsInTransition(m_LayerIndex))
             {
-                // Force "current" state to be the state we're transitionaing to
+                // Force "current" state to be the state we're transitioning to
                 AnimatorStateInfo info = m_AnimatedTarget.GetNextAnimatorStateInfo(m_LayerIndex);
                 hash = info.fullPathHash;
                 if (m_AnimatedTarget.GetNextAnimatorClipInfoCount(m_LayerIndex) > 1)
@@ -444,7 +457,7 @@ namespace Cinemachine
                 }
 
                 // Is it pending?
-                if (deltaTime >= 0)
+                if (PreviousStateIsValid)
                 {
                     if (mPendingActivationTime != 0 && mPendingInstruction.m_FullHash == hash)
                     {
@@ -479,7 +492,7 @@ namespace Cinemachine
             Instruction newInstr = m_Instructions[mInstructionDictionary[hash]];
             if (newInstr.m_VirtualCamera == null)
                 newInstr.m_VirtualCamera = defaultCam;
-            if (deltaTime >= 0 && mActivationTime > 0)
+            if (PreviousStateIsValid && mActivationTime > 0)
             {
                 if (newInstr.m_ActivateAfter > 0
                     || ((now - mActivationTime) < mActiveInstruction.m_MinDuration

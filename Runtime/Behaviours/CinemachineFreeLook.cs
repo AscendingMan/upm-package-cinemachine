@@ -20,17 +20,20 @@ namespace Cinemachine
 #else
     [ExecuteInEditMode]
 #endif
+    [ExcludeFromPreset]
     [AddComponentMenu("Cinemachine/CinemachineFreeLook")]
     public class CinemachineFreeLook : CinemachineVirtualCameraBase
     {
         /// <summary>Object for the camera children to look at (the aim target)</summary>
         [Tooltip("Object for the camera children to look at (the aim target).")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_LookAt = null;
 
         /// <summary>Object for the camera children wants to move with (the body target)</summary>
         [Tooltip("Object for the camera children wants to move with (the body target).")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_Follow = null;
 
         /// <summary>If enabled, this lens setting will apply to all three child rigs, otherwise the child rig lens settings will be used</summary>
@@ -169,6 +172,22 @@ namespace Cinemachine
             mIsDestroyed = false;
             base.OnEnable();
             InvalidateRigCache();
+            UpdateInputAxisProvider();
+        }
+
+        /// <summary>
+        /// API for the inspector.  Internal use only
+        /// </summary>
+        public void UpdateInputAxisProvider()
+        {
+            m_XAxis.SetInputAxisProvider(0, null);
+            m_YAxis.SetInputAxisProvider(1, null);
+            var provider = GetInputAxisProvider();
+            if (provider != null)
+            {
+                m_XAxis.SetInputAxisProvider(0, provider);
+                m_YAxis.SetInputAxisProvider(1, provider);
+            }
         }
 
         /// <summary>Makes sure that the child rigs get destroyed in an undo-firndly manner.
@@ -194,7 +213,30 @@ namespace Cinemachine
 
         void Reset()
         {
+#if UNITY_EDITOR
+            bool isPrefab = gameObject.scene.name == null; // causes a small GC alloc
+            if (isPrefab || UnityEditor.PrefabUtility.GetPrefabInstanceStatus(gameObject)
+                    != UnityEditor.PrefabInstanceStatus.NotAPrefab)
+            {
+                Debug.Log("You cannot reset a prefab instance.  "
+                    + "First disconnect this instance from the prefab, or enter Prefab Edit mode");
+                return;
+            }
+#endif
             DestroyRigs();
+        }
+
+        public override bool PreviousStateIsValid
+        {
+            get { return base.PreviousStateIsValid; }
+            set
+            {
+                if (value == false)
+                    for (int i = 0; m_Rigs != null && i < m_Rigs.Length; ++i)
+                        if (m_Rigs[i] != null)
+                            m_Rigs[i].PreviousStateIsValid = value;
+                base.PreviousStateIsValid = value;
+            }
         }
 
         /// <summary>The cacmera state, which will be a blend of the child rig states</summary>
@@ -258,6 +300,36 @@ namespace Cinemachine
             base.OnTargetObjectWarped(target, positionDelta);
         }
 
+        /// <summary>
+        /// Force the virtual camera to assume a given position and orientation.  
+        /// Procedural placement then takes over
+        /// </summary>
+        /// <param name="pos">Worldspace pposition to take</param>
+        /// <param name="rot">Worldspace orientation to take</param>
+        public override void ForceCameraPosition(Vector3 pos, Quaternion rot)
+        {
+            var up = State.ReferenceUp;
+            m_YAxis.Value = GetYAxisClosestValue(pos, up);
+
+            PreviousStateIsValid = true;
+            transform.position = pos;
+            transform.rotation = rot;
+            m_State.RawPosition = pos;
+            m_State.RawOrientation = rot;
+
+            UpdateRigCache();
+            if (m_BindingMode != CinemachineTransposer.BindingMode.SimpleFollowWithWorldUp)
+                m_XAxis.Value = mOrbitals[1].GetAxisClosestValue(pos, up);
+
+            PushSettingsToRigs();
+            for (int i = 0; i < 3; ++i)
+                m_Rigs[i].ForceCameraPosition(pos, rot);
+
+            InternalUpdateCameraState(up, -1);
+
+            base.ForceCameraPosition(pos, rot);
+        }
+        
         /// <summary>Internal use only.  Called by CinemachineCore at designated update time
         /// so the vcam can position itself and track its targets.  All 3 child rigs are updated,
         /// and a blend calculated, depending on the value of the Y axis.</summary>
@@ -265,9 +337,6 @@ namespace Cinemachine
         /// <param name="deltaTime">Delta time for time-based effects (ignore if less than 0)</param>
         override public void InternalUpdateCameraState(Vector3 worldUp, float deltaTime)
         {
-            if (!PreviousStateIsValid)
-                deltaTime = -1;
-
             UpdateRigCache();
 
             // Update the current state by invoking the component pipeline
@@ -290,8 +359,8 @@ namespace Cinemachine
             PreviousStateIsValid = true;
 
             // Set up for next frame
-            bool activeCam = (deltaTime >= 0) && CinemachineCore.Instance.IsLive(this);
-            if (activeCam)
+            bool activeCam = PreviousStateIsValid && CinemachineCore.Instance.IsLive(this);
+            if (activeCam && deltaTime >= 0)
             {
                 if (m_YAxis.Update(deltaTime))
                     m_YAxisRecentering.CancelRecentering();
@@ -311,10 +380,10 @@ namespace Cinemachine
             base.OnTransitionFromCamera(fromCam, worldUp, deltaTime);
             InvokeOnTransitionInExtensions(fromCam, worldUp, deltaTime);
             bool forceUpdate = false;
-            m_RecenterToTargetHeading.DoRecentering(ref m_XAxis, -1, 0);
-            m_RecenterToTargetHeading.DoRecentering(ref m_YAxis, -1, 0.5f);
-            m_RecenterToTargetHeading.CancelRecentering();
-            m_YAxis.m_Recentering.CancelRecentering();
+//            m_RecenterToTargetHeading.DoRecentering(ref m_XAxis, -1, 0);
+//              m_YAxis.m_Recentering.DoRecentering(ref m_YAxis, -1, 0.5f);
+//            m_RecenterToTargetHeading.CancelRecentering();
+//            m_YAxis.m_Recentering.CancelRecentering();
             if (fromCam != null && m_Transitions.m_InheritPosition)
             {
                 var cameraPos = fromCam.State.RawPosition;
@@ -340,7 +409,11 @@ namespace Cinemachine
                 forceUpdate = true;
             }
             if (forceUpdate)
+            {
+                for (int i = 0; i < 3; ++i)
+                    m_Rigs[i].InternalUpdateCameraState(worldUp, deltaTime);
                 InternalUpdateCameraState(worldUp, deltaTime);
+            }
             else
                 UpdateCameraState(worldUp, deltaTime);
             if (m_Transitions.m_OnCameraLive != null)
@@ -528,7 +601,7 @@ namespace Cinemachine
                     m_Rigs = CreateRigs(copyFrom);
                 }
             }
-            for (int i = 0; m_Rigs != null && i < 3; ++i)
+            for (int i = 0; m_Rigs != null && i < 3 && i < m_Rigs.Length; ++i)
                 if (m_Rigs[i] != null)
                     CinemachineVirtualCamera.SetFlagsForHiddenChild(m_Rigs[i].gameObject);
 #endif
@@ -546,14 +619,18 @@ namespace Cinemachine
                 LocateExistingRigs(RigNames, true);
             }
 
+#if UNITY_EDITOR
             foreach (var rig in m_Rigs)
             {
                 // Configure the UI
+                if (rig == null)
+                    continue;
                 rig.m_ExcludedPropertiesInInspector = m_CommonLens
                     ? new string[] { "m_Script", "Header", "Extensions", "m_Priority", "m_Transitions", "m_Follow", "m_StandbyUpdate", "m_Lens" }
                     : new string[] { "m_Script", "Header", "Extensions", "m_Priority", "m_Transitions", "m_Follow", "m_StandbyUpdate" };
                 rig.m_LockStageInInspector = new CinemachineCore.Stage[] { CinemachineCore.Stage.Body };
             }
+#endif
 
             // Create the blend objects
             mBlendA = new CinemachineBlend(m_Rigs[1], m_Rigs[0], AnimationCurve.Linear(0, 0, 1, 1), 1, 0);
@@ -601,11 +678,14 @@ namespace Cinemachine
 
         float UpdateXAxisHeading(CinemachineOrbitalTransposer orbital, float deltaTime, Vector3 up)
         {
+            if (this == null)   
+                return 0; // deleted
             if (mOrbitals != null && mOrbitals[1] == orbital)
             {
                 var oldValue = m_XAxis.Value;
                 CachedXAxisHeading = orbital.UpdateHeading(
-                    deltaTime, up, ref m_XAxis, ref m_RecenterToTargetHeading,
+                    PreviousStateIsValid ? deltaTime : -1, up,
+                    ref m_XAxis, ref m_RecenterToTargetHeading,
                     CinemachineCore.Instance.IsLive(this));
                 // Allow externally-driven values to work in this mode
                 if (m_BindingMode == CinemachineTransposer.BindingMode.SimpleFollowWithWorldUp)
@@ -637,15 +717,18 @@ namespace Cinemachine
                 }
                 m_Rigs[i].Follow = null;
                 m_Rigs[i].m_StandbyUpdate = m_StandbyUpdate;
+                m_Rigs[i].FollowTargetAttachment = FollowTargetAttachment;
+                m_Rigs[i].LookAtTargetAttachment = LookAtTargetAttachment;
                 if (!PreviousStateIsValid)
                 {
                     m_Rigs[i].PreviousStateIsValid = false;
                     m_Rigs[i].transform.position = transform.position;
                     m_Rigs[i].transform.rotation = transform.rotation;
                 }
+#if UNITY_EDITOR
                 // Hide the rigs from prying eyes
                 CinemachineVirtualCamera.SetFlagsForHiddenChild(m_Rigs[i].gameObject);
-
+#endif
                 mOrbitals[i].m_FollowOffset = GetLocalPositionForCameraFromInput(GetYAxisValue());
                 mOrbitals[i].m_BindingMode = m_BindingMode;
                 mOrbitals[i].m_Heading = m_Heading;
@@ -666,8 +749,7 @@ namespace Cinemachine
         private CameraState CalculateNewState(Vector3 worldUp, float deltaTime)
         {
             CameraState state = PullStateFromVirtualCamera(worldUp, ref m_Lens);
-            if (deltaTime >= 0)
-                m_YAxisRecentering.DoRecentering(ref m_YAxis, deltaTime, 0.5f);
+            m_YAxisRecentering.DoRecentering(ref m_YAxis, deltaTime, 0.5f);
 
             // Blend from the appropriate rigs
             float t = GetYAxisValue();
@@ -723,7 +805,8 @@ namespace Cinemachine
         Vector4[] m_CachedCtrl2;
         void UpdateCachedSpline()
         {
-            bool cacheIsValid = (m_CachedOrbits != null && m_CachedTension == m_SplineCurvature);
+            bool cacheIsValid = (m_CachedOrbits != null && m_CachedOrbits.Length == 3 
+                && m_CachedTension == m_SplineCurvature);
             for (int i = 0; i < 3 && cacheIsValid; ++i)
                 cacheIsValid = (m_CachedOrbits[i].m_Height == m_Orbits[i].m_Height
                     && m_CachedOrbits[i].m_Radius == m_Orbits[i].m_Radius);

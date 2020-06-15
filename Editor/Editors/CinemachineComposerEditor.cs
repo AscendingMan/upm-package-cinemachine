@@ -8,6 +8,7 @@ namespace Cinemachine.Editor
     internal class CinemachineComposerEditor : BaseEditor<CinemachineComposer>
     {
         CinemachineScreenComposerGuides mScreenGuideEditor;
+        GameViewEventCatcher mGameViewEventCatcher;
 
         protected virtual void OnEnable()
         {
@@ -18,15 +19,21 @@ namespace Cinemachine.Editor
             mScreenGuideEditor.SetSoftGuide = (Rect r) => { Target.SoftGuideRect = r; };
             mScreenGuideEditor.Target = () => { return serializedObject; };
 
+            mGameViewEventCatcher = new GameViewEventCatcher();
+            mGameViewEventCatcher.OnEnable();
+
             CinemachineDebug.OnGUIHandlers -= OnGUI;
             CinemachineDebug.OnGUIHandlers += OnGUI;
-            InspectorUtility.RepaintGameView(Target);
+            if (CinemachineSettings.CinemachineCoreSettings.ShowInGameGuides)
+                InspectorUtility.RepaintGameView();
         }
 
         protected virtual void OnDisable()
         {
+            mGameViewEventCatcher.OnDisable();
             CinemachineDebug.OnGUIHandlers -= OnGUI;
-            InspectorUtility.RepaintGameView(Target);
+            if (CinemachineSettings.CinemachineCoreSettings.ShowInGameGuides)
+                InspectorUtility.RepaintGameView();
         }
 
         public override void OnInspectorGUI()

@@ -20,8 +20,10 @@ namespace Cinemachine
     public class CinemachineExternalCamera : CinemachineVirtualCameraBase
     {
         /// <summary>The object that the camera is looking at.</summary>
-        [Tooltip("The object that the camera is looking at.  Setting this will improve the quality of the blends to and from this camera")]
+        [Tooltip("The object that the camera is looking at.  Setting this will improve the "
+            + "quality of the blends to and from this camera")]
         [NoSaveDuringPlay]
+        [VcamTargetProperty]
         public Transform m_LookAt = null;
 
         private Camera m_Camera;
@@ -50,8 +52,13 @@ namespace Cinemachine
         {
             // Get the state from the camera
             if (m_Camera == null)
+            {
+#if UNITY_2019_2_OR_NEWER
+                TryGetComponent(out m_Camera);
+#else
                 m_Camera = GetComponent<Camera>();
-
+#endif
+            }
             m_State = CameraState.Default;
             m_State.RawPosition = transform.position;
             m_State.RawOrientation = transform.rotation;
